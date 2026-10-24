@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 keeps the theme in CSS rather than a JS config. These are the
+ * same palettes the prototype used, carried over unchanged so the design does
+ * not shift during the move to Next.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-navy-50: #eef2fa;
+  --color-navy-100: #d6dff0;
+  --color-navy-200: #a9bbdd;
+  --color-navy-300: #7690c4;
+  --color-navy-400: #4a68a8;
+  --color-navy-500: #2e4b8a;
+  --color-navy-600: #1f3770;
+  --color-navy-700: #162956;
+  --color-navy-800: #0f1f44;
+  --color-navy-900: #0a1633;
+  --color-navy-950: #060e22;
+
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-300: #6ee7b7;
+  --color-brand-400: #34d399;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  --color-gold-50: #fdf8ec;
+  --color-gold-100: #faedcb;
+  --color-gold-300: #ebc567;
+  --color-gold-400: #e0ae3b;
+  --color-gold-500: #c9932a;
+  --color-gold-600: #a7761f;
+
+  --shadow-card: 0 1px 2px rgba(15, 31, 68, 0.04), 0 1px 3px rgba(15, 31, 68, 0.06);
+  --shadow-pop: 0 10px 30px -10px rgba(15, 31, 68, 0.25);
+
+  --animate-fade-in: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --fg: #0f1f44;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* Tabular figures: money columns must line up vertically. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    --tw-ring-offset-width: 2px;
+    box-shadow:
+      0 0 0 var(--tw-ring-offset-width) #fff,
+      0 0 0 calc(var(--tw-ring-offset-width) + 2px) var(--color-brand-500);
+  }
+}
+
+@utility label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-navy-800);
+}
+
+@utility input {
+  display: block;
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-slate-300);
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-navy-900);
+  box-shadow: 0 1px 2px rgba(15, 31, 68, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+
+  &::placeholder {
+    color: var(--color-slate-400);
+  }
+  &:focus {
+    outline: none;
+    border-color: var(--color-brand-500);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-brand-500) 25%, transparent);
+  }
+  &:disabled {
+    background: var(--color-slate-50);
+    color: var(--color-slate-500);
+  }
+}
+
+@utility input-error {
+  border-color: var(--color-red-400);
+
+  &:focus {
+    border-color: var(--color-red-500);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-red-500) 20%, transparent);
+  }
+}
+
+@utility eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-slate-500);
+}
+
+@utility th {
+  padding: 0.625rem 1rem;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-slate-500);
+  white-space: nowrap;
+}
+
+@utility td {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--color-navy-800);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
