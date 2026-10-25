@@ -270,7 +270,7 @@ function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => v
         </div>
 
         <div className="flex justify-end border-t border-slate-200 pt-5">
-          <Button type="submit" size="lg" loading={loading}>
+          <Button type="submit" variant="blue" size="lg" loading={loading}>
             Create account
           </Button>
         </div>

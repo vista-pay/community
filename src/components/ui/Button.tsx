@@ -6,11 +6,13 @@ import type { Route } from 'next';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/format';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'navy' | 'link' | 'soft';
+type Variant = 'primary' | 'blue' | 'secondary' | 'ghost' | 'danger' | 'navy' | 'link' | 'soft';
 type Size = 'xs' | 'sm' | 'md' | 'lg';
 
 const variants: Record<Variant, string> = {
   primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm disabled:bg-brand-600/50',
+  /** The suite-wide auth blue, matching the admin and business consoles. */
+  blue: 'bg-[#2563EB] text-white hover:bg-[#1D4ED8] shadow-sm disabled:bg-[#2563EB]/50',
   navy: 'bg-navy-800 text-white hover:bg-navy-900 shadow-sm disabled:bg-navy-800/50',
   secondary: 'bg-white text-navy-800 border border-slate-300 hover:bg-slate-50 hover:border-slate-400 shadow-sm disabled:text-slate-400',
   soft: 'bg-brand-50 text-brand-800 hover:bg-brand-100',

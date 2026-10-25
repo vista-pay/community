@@ -99,7 +99,7 @@ export function SignInForm() {
         />
       </Field>
 
-      <Button type="submit" block size="lg" loading={loading}>
+      <Button type="submit" variant="blue" block size="lg" loading={loading}>
         Sign in
       </Button>
     </form>

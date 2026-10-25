@@ -1,20 +1,19 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Logo } from '@/components/layout/Logo';
+import { AuthShell } from '@/components/layout/AuthShell';
 import { SignInForm } from './sign-in-form';
 
 export const metadata: Metadata = { title: 'Sign in' };
 
 export default function SignInPage() {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-[#F5F7FB] px-4 py-10">
+    <AuthShell
+      headline="Run your community's money and membership from one secure place."
+      subhead="Dues, savings, services, meetings and members — with officer approvals and a complete audit trail."
+    >
       <div className="w-full max-w-md">
-        <div className="mb-8 flex justify-center">
-          <Logo />
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card sm:p-8">
+        <div className="rounded-[20px] bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,.10)] sm:p-8">
           <h1 className="text-xl font-semibold text-navy-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-500">
             Use the Rendi account you registered your community with.
@@ -31,6 +30,6 @@ export default function SignInPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   );
 }

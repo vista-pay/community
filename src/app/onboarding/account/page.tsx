@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Logo } from '@/components/layout/Logo';
+import { AuthShell } from '@/components/layout/AuthShell';
 import { getAccessToken } from '@/lib/session';
 import { OnboardingFlow } from './onboarding-flow';
 
@@ -16,12 +16,11 @@ export default async function CommunityRegistrationPage() {
   const signedIn = Boolean(await getAccessToken());
 
   return (
-    <main className="min-h-dvh bg-[#F5F7FB] px-4 py-8 sm:py-12">
-      <div className="mx-auto w-full max-w-2xl">
-        <div className="mb-8 flex justify-center">
-          <Logo />
-        </div>
-
+    <AuthShell
+      headline="Bring your cooperative, association or thrift group onto Rendi."
+      subhead="Create your account, verify it, and register the community — contributions, services and records follow."
+    >
+      <div className="w-full max-w-2xl">
         <OnboardingFlow signedIn={signedIn} />
 
         {!signedIn && (
@@ -33,6 +32,6 @@ export default async function CommunityRegistrationPage() {
           </p>
         )}
       </div>
-    </main>
+    </AuthShell>
   );
 }
