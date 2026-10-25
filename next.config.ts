@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // no backend origin is ever reachable from the browser and no token is
   // readable by script. See src/app/api/README.md.
   typedRoutes: true,
+  experimental: {
+    agentUpgrade: 'security',
+  },
 };
 
 export default nextConfig;
