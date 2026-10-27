@@ -28,7 +28,10 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
   });
 
   const d = data ?? initial;
-  const wallet = d.wallet?.accounts[0];
+  // The operating balance is naira: accounts exist per active currency and
+  // their order is arbitrary, so index 0 was sometimes AUD.
+  const wallet =
+    d.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ?? d.wallet?.accounts[0];
 
   return (
     <>
@@ -36,9 +39,14 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
         title={d.community.name}
         subtitle={[d.community.category, d.community.city].filter(Boolean).join(' · ') || undefined}
         actions={
-          <LinkButton variant="secondary" href="/reports">
-            Reports
-          </LinkButton>
+          <>
+            <LinkButton variant="secondary" href="/wallet">
+              Fund wallet
+            </LinkButton>
+            <LinkButton variant="secondary" href="/reports">
+              Reports
+            </LinkButton>
+          </>
         }
       />
 

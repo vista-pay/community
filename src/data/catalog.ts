@@ -39,6 +39,19 @@ export const ORG_CATEGORIES = [
   'Other',
 ] as const;
 
+/** The services a community can offer its members in the Rendi app. These are
+ * the chips on the Discover card, so the vocabulary is fixed rather than
+ * free text — a member comparing communities sees the same words everywhere. */
+export const SERVICE_TAGS = [
+  'Loans',
+  'Savings',
+  'Welfare',
+  'Contributions',
+  'Programmes',
+  'Partner offers',
+  'Events',
+] as const;
+
 export const MEETING_KINDS = [
   { value: 'AGM', label: 'Annual general meeting' },
   { value: 'GENERAL', label: 'General meeting' },

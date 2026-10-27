@@ -32,14 +32,14 @@ export function ServicesClient({
     <>
       <PageHeader
         title="Services"
-        subtitle="Welfare and support members can request from the Vista app"
+        subtitle="Welfare and support members can request from the Rendi app"
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
             title="Requests"
-            subtitle="Decisions are made by a Vista administrator where a fee is charged"
+            subtitle="Decisions are made by a Rendi administrator where a fee is charged"
           />
           <DataTable
             rows={requests.data ?? []}
@@ -72,7 +72,7 @@ export function ServicesClient({
         </Card>
 
         <Card className="h-fit">
-          <CardHeader title="What members can request" subtitle="The Vista services catalogue" />
+          <CardHeader title="What members can request" subtitle="The Rendi services catalogue" />
           {catalog.length === 0 ? (
             <EmptyState compact title="Catalogue unavailable" body="No services are published yet." />
           ) : (

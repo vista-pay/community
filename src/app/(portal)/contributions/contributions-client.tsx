@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, RefreshCw, Users } from 'lucide-react';
+import { ArrowRight, Check, Plus, RefreshCw, UserPlus, Users } from 'lucide-react';
 import {
   AmountInput,
   Badge,
@@ -26,16 +26,19 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
-import type { AjoGroupSummary } from '@/types';
+import type { AjoJoinRequestRow, CommunityGroupRow } from '@/types';
 import { InviteButton } from '@/components/ajo/invite-panel';
 
-export function ContributionsClient({ initial }: { initial: AjoGroupSummary[] }) {
+export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] }) {
   const { community } = useSession();
   const [creating, setCreating] = useState(false);
+  const [reviewingGroup, setReviewingGroup] = useState<CommunityGroupRow | null>(null);
 
-  const { data, refresh } = useQuery<AjoGroupSummary[]>(() => portalApi.ajoGroups(), [], {
-    initial,
-  });
+  const { data, refresh } = useQuery<CommunityGroupRow[]>(
+    () => portalApi.communityAjoGroups(community!.id),
+    [community!.id],
+    { initial },
+  );
 
   const groups = data ?? [];
   const active = groups.filter((g) => g.status === 'ACTIVE');
@@ -94,14 +97,16 @@ export function ContributionsClient({ initial }: { initial: AjoGroupSummary[] })
                   <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Badge tone="slate">{humanise(g.type)}</Badge>
-                  {g.role !== 'MEMBER' && <Badge tone="navy">{humanise(g.role)}</Badge>}
+                  <Badge tone="slate">{humanise(g.payoutSelectionMode)}</Badge>
                   {g.activeCycle ? (
                     <Badge tone="slate">
-                      Round {g.activeCycle.currentRound ?? 1} of {g.activeCycle.totalPeriods}
+                      Cycle {g.activeCycle.cycleNumber} · {g.activeCycle.totalPeriods} rounds
                     </Badge>
                   ) : (
                     <Badge tone="amber">No active cycle</Badge>
+                  )}
+                  {(g.pendingRequests ?? 0) > 0 && (
+                    <Badge tone="red">{g.pendingRequests} join request{g.pendingRequests === 1 ? '' : 's'}</Badge>
                   )}
                 </div>
               </Link>
@@ -116,6 +121,13 @@ export function ContributionsClient({ initial }: { initial: AjoGroupSummary[] })
                     ? 'Every place taken'
                     : `${g.memberLimit - g.memberCount} place${g.memberLimit - g.memberCount === 1 ? '' : 's'} left`}
                 </span>
+                <Button
+                  variant="secondary"
+                  icon={<UserPlus className="h-4 w-4" />}
+                  onClick={() => setReviewingGroup(g)}
+                >
+                  Join requests{(g.pendingRequests ?? 0) > 0 ? ` (${g.pendingRequests})` : ''}
+                </Button>
                 {g.invitationCode && (
                 <InviteButton
                   groupId={g.groupId}
@@ -137,6 +149,14 @@ export function ContributionsClient({ initial }: { initial: AjoGroupSummary[] })
         communityId={community!.id}
         onCreated={refresh}
       />
+
+      {reviewingGroup && (
+        <JoinRequestsModal
+          group={reviewingGroup}
+          onClose={() => setReviewingGroup(null)}
+          onDecided={refresh}
+        />
+      )}
     </>
   );
 }
@@ -398,6 +418,94 @@ function CreateGroupModal({
             </Field>
           </div>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** Members asked to join from the app; approval is what grants the seat. */
+function JoinRequestsModal({
+  group,
+  onClose,
+  onDecided,
+}: {
+  group: CommunityGroupRow;
+  onClose: () => void;
+  onDecided: () => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const { data, refresh } = useQuery(
+    () => portalApi.ajoJoinRequests(group.groupId),
+    [group.groupId],
+  );
+
+  const review = useMutation(
+    ({ membershipId, approve }: { membershipId: string; approve: boolean }) =>
+      portalApi.reviewAjoJoinRequest(group.groupId, membershipId, approve),
+    {
+      onSuccess: async () => {
+        toast('Done', 'success', 'The member has been notified.');
+        await Promise.all([refresh(), onDecided()]);
+      },
+      onError: (message) => toast('Could not action that request', 'error', message),
+    },
+  );
+
+  const requests: AjoJoinRequestRow[] = data?.requests ?? [];
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Join requests — ${group.name}`}
+      description={
+        data ? `${data.spotsFilled} of ${data.memberLimit} seats filled` : 'Loading…'
+      }
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <div className="space-y-3">
+        {requests.length === 0 && (
+          <p className="py-6 text-center text-sm text-slate-500">
+            Nobody is waiting. Members join from the app under Contributions.
+          </p>
+        )}
+        {requests.map((r) => (
+          <div key={r.membershipId} className="rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-navy-900">{r.name}</p>
+                <p className="text-xs text-slate-500">
+                  {r.phone} · {r.acceptedRules ? 'accepted rules & fees' : 'rules not yet accepted'}
+                </p>
+              </div>
+              <Badge tone={r.kycApproved || r.kycTier === 'TIER_2' || r.kycTier === 'TIER_3' ? 'green' : 'amber'}>
+                {humanise(r.kycTier)}
+              </Badge>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                disabled={review.pending}
+                onClick={() => void review.run({ membershipId: r.membershipId, approve: false })}
+              >
+                Decline
+              </Button>
+              <Button
+                className="flex-1"
+                icon={<Check className="h-4 w-4" />}
+                loading={review.pending}
+                onClick={() => void review.run({ membershipId: r.membershipId, approve: true })}
+              >
+                Approve
+              </Button>
+            </div>
+          </div>
+        ))}
       </div>
     </Modal>
   );

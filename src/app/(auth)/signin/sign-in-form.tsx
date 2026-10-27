@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Callout, Field, Input, PasswordInput } from '@/components/ui';
 import { authApi } from '@/lib/api';
@@ -98,6 +99,12 @@ export function SignInForm() {
           autoComplete="current-password"
         />
       </Field>
+
+      <div className="text-right">
+        <Link href="/forgot-password" className="text-sm font-medium text-navy-700 hover:underline">
+          Forgot password?
+        </Link>
+      </div>
 
       <Button type="submit" variant="blue" block size="lg" loading={loading}>
         Sign in

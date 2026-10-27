@@ -15,6 +15,7 @@ import {
   CreditCard,
   Globe,
   HandCoins,
+  HeartHandshake,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -27,6 +28,7 @@ import {
   UserCog,
   UserPlus,
   Users,
+  Wallet as WalletIcon,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/format';
@@ -47,12 +49,15 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
       { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw },
       { href: '/savings', label: 'Savings', icon: PiggyBank },
       { href: '/loans', label: 'Loans', icon: HandCoins },
-      { href: '/services', label: 'Services', icon: Sparkles },
+      // { href: '/services', label: 'Services', icon: Sparkles },
+      { href: '/welfare', label: 'Welfare', icon: HeartHandshake },
+      { href: '/opportunities', label: 'Opportunities', icon: Sparkles },
     ],
   },
   {
     group: 'Finance',
     items: [
+      { href: '/wallet', label: 'Wallet', icon: WalletIcon },
       { href: '/accounting', label: 'Accounting', icon: BookOpen },
       { href: '/reports', label: 'Reports', icon: BarChart3 },
     ],
@@ -79,11 +84,49 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { community } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
 
   const unverified = community?.status !== 'VERIFIED';
 
+  // Verification mandates the public listing. Rather than yanking the officer
+  // off whatever page they opened, a blocking modal explains the one thing
+  // left to do and offers the only way forward. No close affordance: the
+  // mandate is the point.
+  const mustSetUpListing =
+    Boolean(community?.listingSetupRequired) && !pathname.startsWith('/listing');
+
   return (
     <div className="min-h-dvh bg-[#F5F7FB]">
+      {mustSetUpListing && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-navy-900/60 p-4 backdrop-blur-sm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="listing-mandate-title"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
+              <Globe className="h-5 w-5 text-blue-600" />
+            </div>
+            <h2 id="listing-mandate-title" className="mt-4 text-lg font-bold text-navy-900">
+              Set up your listing page first
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              {community?.name} is now verified. Before you can use the rest of the portal, complete
+              your public listing — logo, tagline, category and joining terms — and submit it for
+              review. This is what members see when they find you in the Rendi app.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push('/listing')}
+              className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-xl bg-navy-900 text-sm font-semibold text-white transition hover:bg-navy-800"
+            >
+              Set up listing page
+            </button>
+          </div>
+        </div>
+      )}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-30 hidden bg-navy-900 transition-[width] duration-200 md:block',

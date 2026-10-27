@@ -23,12 +23,19 @@ import type {
   CommunityDocument,
   ContributionBoard,
   DashboardData,
+  WalletData,
   Expense,
   Fine,
   JoinRequest,
   JoinReviewStage,
   JournalEntry,
   Listing,
+  LoanApplicationDetail,
+  Opportunity,
+  CommunityGroupRow,
+  AjoJoinRequestRow,
+  WelfareRequestDetail,
+  WelfareRequestRow,
   Loan,
   LoanProduct,
   LoanQuote,
@@ -55,6 +62,7 @@ const path = (communityId: string, suffix = '') => `/communities/${communityId}$
 
 export const portalApi = {
   dashboard: (communityId: string) => get<DashboardData>(path(communityId, '/dashboard')),
+  wallet: (communityId: string) => get<WalletData>(path(communityId, '/wallet')),
 
   auditLogs: (communityId: string, page = 1, limit = 50) =>
     get<AuditEntry[]>(path(communityId, '/audit-logs'), { page, limit }),
@@ -102,7 +110,41 @@ export const portalApi = {
 
   // ───────────────────────────── Listing ─────────────────────────────
 
+  loanDetail: (loanId: string) => get<LoanApplicationDetail>(`/ajo-loans/${loanId}`),
+  communityAjoGroups: (communityId: string) =>
+    get<CommunityGroupRow[]>(path(communityId, '/ajo-groups')),
+  ajoJoinRequests: (groupId: string) =>
+    get<{ spotsFilled: number; memberLimit: number; requests: AjoJoinRequestRow[] }>(
+      `/ajo-groups/${groupId}/join-requests`,
+    ),
+  reviewAjoJoinRequest: (groupId: string, membershipId: string, approve: boolean) =>
+    post<unknown>(`/ajo-groups/${groupId}/join-requests/${membershipId}`, { approve }),
+
+  opportunities: (communityId: string) =>
+    get<Opportunity[]>(path(communityId, '/opportunities'), { all: '1' }),
+  upsertOpportunity: (communityId: string, body: Record<string, unknown>) =>
+    post<Opportunity>(path(communityId, '/opportunities'), body),
+
+  welfareQueue: (communityId: string, status?: string) =>
+    get<WelfareRequestRow[]>(path(communityId, '/welfare'), status ? { status } : undefined),
+  welfareRequest: (requestId: string) =>
+    get<WelfareRequestDetail>(`/welfare-requests/${requestId}`),
+  reviewWelfare: (requestId: string, body: { status: string; note?: string }) =>
+    patch<unknown>(`/welfare-requests/${requestId}`, body),
+  replyWelfare: (requestId: string, body: { text?: string; attachmentUrl?: string }) =>
+    post<unknown>(`/welfare-requests/${requestId}/messages`, body),
+
   listing: (communityId: string) => get<Listing>(path(communityId, '/listing')),
+  uploadSignature: (folder: string) =>
+    post<{
+      cloudName: string;
+      apiKey: string;
+      timestamp: number;
+      signature: string;
+      folder: string;
+      publicId: string;
+      uploadUrl: string;
+    }>('/media/upload-signature', { folder }),
   updateListing: (communityId: string, body: Record<string, unknown>) =>
     patch<Listing>(path(communityId, '/listing'), body),
   submitListing: (communityId: string) => post<unknown>(path(communityId, '/listing/submit')),
@@ -278,6 +320,9 @@ export const portalApi = {
   loanProducts: (communityId: string) =>
     get<LoanProduct[]>(path(communityId, '/loan-products')),
 
+  communityLoans: (communityId: string, status?: string) =>
+    get<Loan[]>(path(communityId, '/loans'), { status }),
+
   createLoanProduct: (communityId: string, body: Record<string, unknown>) =>
     post<LoanProduct>(path(communityId, '/loan-products'), body),
 
@@ -290,7 +335,7 @@ export const portalApi = {
     body: { principal: string; tenorMonths: number },
   ) => post<LoanQuote>(path(communityId, `/loan-products/${productId}/quote`), body),
 
-  // Loan applications live on the Ajo group that funds them.
+  // Legacy group-funded loan applications live on the Ajo group.
   groupLoans: (ajoGroupId: string, status?: string) =>
     get<Loan[]>(`/ajo-groups/${ajoGroupId}/loans`, { status }),
 

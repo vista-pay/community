@@ -90,12 +90,14 @@ export function Toggle({ checked, onChange, label, disabled, size = 'md' }: { ch
   );
 }
 
-export function Segmented<T extends string>({ value, onChange, options, label, size = 'md' }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; label: string; size?: 'sm' | 'md' }) {
+export function Segmented<T extends string>({ value, onChange, options, label, size = 'md' }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode; disabled?: boolean }[]; label: string; size?: 'sm' | 'md' }) {
   return (
     <div role="radiogroup" aria-label={label} className="inline-flex max-w-full flex-wrap rounded-lg border border-slate-200 bg-slate-100/70 p-0.5">
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
-          className={cn('rounded-md font-medium transition focus-ring', size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]', value === o.value ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-600 hover:text-navy-900')}>
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} disabled={o.disabled}
+          onClick={() => !o.disabled && onChange(o.value)}
+          className={cn('rounded-md font-medium transition focus-ring', size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]',
+            o.disabled ? 'cursor-not-allowed text-slate-400' : value === o.value ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-600 hover:text-navy-900')}>
           {o.label}
         </button>
       ))}

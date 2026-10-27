@@ -211,7 +211,7 @@ function ComposeModal({
   const [body, setBody] = useState('');
   const [pin, setPin] = useState(false);
   const [notify, setNotify] = useState(true);
-  const [channel, setChannel] = useState<'APP' | 'SMS' | 'EMAIL'>('SMS');
+  const [channel, setChannel] = useState<'APP' | 'SMS' | 'EMAIL'>('EMAIL');
 
   const send = useMutation(
     async (): Promise<void> => {
@@ -293,7 +293,7 @@ function ComposeModal({
                 value={channel}
                 onChange={setChannel}
                 options={[
-                  { value: 'SMS', label: 'SMS' },
+                  { value: 'SMS', label: 'SMS (coming soon)', disabled: true },
                   { value: 'EMAIL', label: 'Email' },
                   { value: 'APP', label: 'In-app' },
                 ]}

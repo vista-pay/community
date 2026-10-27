@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CheckCircle2, HandCoins, Package, Plus, Send } from 'lucide-react';
+import { CheckCircle2, HandCoins, Package, Plus, Send, Download, ShieldCheck } from 'lucide-react';
 import {
   AmountInput,
   Badge,
@@ -27,9 +27,15 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
-import { date, money } from '@/lib/format';
+import { date, humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
-import type { AjoGroupSummary, Loan, LoanProduct, LoanQuote } from '@/types';
+import type {
+  AjoGroupSummary,
+  Loan,
+  LoanApplicationDetail,
+  LoanProduct,
+  LoanQuote,
+} from '@/types';
 
 type Tab = 'applications' | 'products';
 
@@ -54,18 +60,24 @@ export function LoansClient({
   const [productOpen, setProductOpen] = useState(false);
   const [quoting, setQuoting] = useState<LoanProduct | null>(null);
   const [deciding, setDeciding] = useState<{ loan: Loan; approve: boolean } | null>(null);
+  const [viewing, setViewing] = useState<Loan | null>(null);
 
   const products = useQuery(() => portalApi.loanProducts(communityId), [communityId], {
     initial: initialProducts,
   });
 
-  // Loans are refetched per group, keeping each group's list independent.
+  // This portal's primary queue is community-funded. Keep compatibility with
+  // any legacy Ajo-group rows while using the correct community endpoint for
+  // the synthetic community bucket created by the server page.
   const [groups, setGroups] = useState(loansByGroup);
   async function refreshLoans() {
     const next = await Promise.all(
       groups.map(async (g) => ({
         group: g.group,
-        loans: await portalApi.groupLoans(g.group.groupId).catch(() => g.loans),
+        loans: await (g.group.groupId === 'community'
+          ? portalApi.communityLoans(communityId)
+          : portalApi.groupLoans(g.group.groupId)
+        ).catch(() => g.loans),
       })),
     );
     setGroups(next);
@@ -105,7 +117,7 @@ export function LoansClient({
     <>
       <PageHeader
         title="Loans"
-        subtitle="Applications against your Ajo group pools, and the terms you lend on"
+        subtitle="Review member applications, guarantors, affordability, and lending terms"
         actions={
           tab === 'products' ? (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => setProductOpen(true)}>
@@ -184,6 +196,9 @@ export function LoansClient({
                   align: 'right',
                   cell: (l) => (
                     <span className="flex justify-end gap-1.5">
+                      <Button size="xs" variant="secondary" onClick={() => setViewing(l)}>
+                        Review application
+                      </Button>
                       {AWAITING.includes(l.status) && (
                         <>
                           <Button
@@ -220,7 +235,7 @@ export function LoansClient({
                 <EmptyState
                   icon={<HandCoins className="h-5 w-5" />}
                   title="No loan applications"
-                  body="Members apply from the Vista app against the pool of an Ajo group they belong to."
+                  body="Applications submitted by community members will appear here for review."
                 />
               }
             />
@@ -284,6 +299,21 @@ export function LoansClient({
       />
 
       <QuoteModal product={quoting} communityId={communityId} onClose={() => setQuoting(null)} />
+
+      {viewing && (
+        <LoanDetailModal
+          loan={viewing}
+          onClose={() => setViewing(null)}
+          onDecide={(approve) => {
+            setDeciding({ loan: viewing, approve });
+            setViewing(null);
+          }}
+          onDisburse={() => {
+            void disburse.run(viewing.id);
+            setViewing(null);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(deciding)}
@@ -485,6 +515,11 @@ function QuoteModal({
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
+          {quote && (
+            <Button variant="secondary" icon={<Download className="h-4 w-4" />} onClick={() => downloadQuote(quote)}>
+              Download
+            </Button>
+          )}
           <Button
             disabled={Number(principal) <= 0}
             loading={run.pending}
@@ -551,6 +586,34 @@ function QuoteModal({
   );
 }
 
+/** The quote as a file the officer can hand to the member. */
+function downloadQuote(quote: LoanQuote) {
+  const row = (label: string, value: string) => `${label},${value}`;
+  const lines = [
+    row('Product', quote.product.name),
+    row('Rate', quote.product.rateLabel),
+    row('Principal', money(quote.principal, quote.currencyCode)),
+    row('Service charge', money(quote.serviceCharge, quote.currencyCode)),
+    row('Processing fee', money(quote.processingFee, quote.currencyCode)),
+    row('Member receives', money(quote.netDisbursed, quote.currencyCode)),
+    row('Total repayable', money(quote.totalRepayable, quote.currencyCode)),
+    row(`Instalments (${quote.instalments})`, money(quote.perInstalment, quote.currencyCode)),
+    row('Final instalment', money(quote.finalInstalment, quote.currencyCode)),
+    row('Tenor', `${quote.tenorMonths} months`),
+    row('Generated', new Date().toLocaleString('en-GB')),
+    row('Note', 'Illustrative quote — final terms are set by the loan committee'),
+  ];
+  const url = URL.createObjectURL(
+    new Blob([`Item,Value\n${lines.join('\n')}`], { type: 'text/csv' }),
+  );
+  const a = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `loan-quote-${quote.product.name.toLowerCase().replace(/\s+/g, '-')}.csv`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function QuoteRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex items-center justify-between px-4 py-2">
@@ -558,6 +621,190 @@ function QuoteRow({ label, value, strong }: { label: string; value: string; stro
         {label}
       </dt>
       <dd className={`tnum text-[13px] ${strong ? 'font-semibold text-navy-900' : 'text-navy-800'}`}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** The application as the committee should read it: the person, the ask,
+ * who stands behind it. */
+function LoanDetailModal({
+  loan,
+  onClose,
+  onDecide,
+  onDisburse,
+}: {
+  loan: Loan;
+  onClose: () => void;
+  onDecide: (approve: boolean) => void;
+  onDisburse: () => void;
+}) {
+  const { data, error } = useQuery<LoanApplicationDetail>(() => portalApi.loanDetail(loan.id), [loan.id]);
+  const d = data;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={`Loan application — ${loan.loanReference}`}
+      description={d?.purpose ?? loan.purpose ?? undefined}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+          {['SUBMITTED', 'UNDER_REVIEW'].includes(loan.status) && (
+            <>
+              <Button variant="danger" onClick={() => onDecide(false)}>
+                Reject
+              </Button>
+              <Button onClick={() => onDecide(true)}>Approve</Button>
+            </>
+          )}
+          {loan.status === 'APPROVED' && (
+            <Button icon={<Send className="h-4 w-4" />} onClick={onDisburse}>
+              Disburse
+            </Button>
+          )}
+        </>
+      }
+    >
+      {error ? (
+        <Callout tone="danger">{error}</Callout>
+      ) : !d ? (
+        <p className="py-8 text-center text-sm text-slate-500">Loading application…</p>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Borrower
+              </p>
+              <p className="mt-1 text-sm font-semibold text-navy-900">{d.borrower?.name ?? '—'}</p>
+              <p className="text-xs text-slate-500">{d.borrower?.email}</p>
+              <p className="text-xs text-slate-500">{d.borrower?.phone}</p>
+              {d.borrower && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Badge tone={d.borrower.kycStatus === 'APPROVED' ? 'green' : 'amber'}>
+                    <ShieldCheck className="mr-1 inline h-3 w-3" />
+                    {humanise(d.borrower.kycTier)} · {humanise(d.borrower.kycStatus)}
+                  </Badge>
+                  <Badge tone={d.borrower.membershipStatus === 'ACTIVE' ? 'green' : 'slate'}>
+                    {humanise(d.borrower.membershipStatus)} member
+                  </Badge>
+                </div>
+              )}
+              {d.borrower?.memberSince && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Member since {date(d.borrower.memberSince)}
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Status
+              </p>
+              <div className="mt-1">
+                <StatusBadge status={d.status.toLowerCase()} />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Applied {date(d.createdAt)}
+                {d.approvedAt ? ` · approved ${date(d.approvedAt)}` : ''}
+                {d.termsAcceptedAt ? ` · terms accepted ${date(d.termsAcceptedAt)}` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Request
+              </p>
+              <p className="mt-1 text-sm font-medium text-navy-900">
+                {d.purpose || 'No purpose supplied'}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {d.productName ? `${d.productName} · ` : ''}{d.termDays} days
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Member position
+              </p>
+              <p className="mt-1 text-sm font-semibold text-navy-900">
+                {d.borrower?.savingsBalance == null
+                  ? 'Savings not available'
+                  : money(d.borrower.savingsBalance, d.currencyCode)}
+              </p>
+              <p className="text-xs text-slate-500">Community savings balance</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200">
+            <dl className="divide-y divide-slate-100">
+              <DetailRow label="Principal" value={money(d.principal, d.currencyCode)} />
+              <DetailRow label="Interest" value={money(d.interestAmount, d.currencyCode)} />
+              <DetailRow label="Processing fee" value={money(d.processingFee, d.currencyCode)} />
+              <DetailRow label="Member receives" value={money(d.netDisbursed, d.currencyCode)} />
+              <DetailRow
+                label="Repayment"
+                value={
+                  d.schedule.length
+                    ? `${d.schedule.length} × ${money(d.schedule[0].amount, d.currencyCode)} from ${date(d.schedule[0].dueDate)}`
+                    : `${d.termDays} days`
+                }
+              />
+              <DetailRow label="Total repayable" value={money(d.totalRepayable, d.currencyCode)} strong />
+            </dl>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              Guarantors ({d.guarantors.length})
+            </p>
+            {d.guarantors.length === 0 && (
+              <p className="text-sm text-slate-500">No guarantors were named.</p>
+            )}
+            <div className="space-y-2">
+              {d.guarantors.map((g) => (
+                <div
+                  key={g.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-navy-900">
+                      {g.name}
+                      {g.external && <span className="ml-1.5 text-xs text-slate-400">external</span>}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {[g.email, g.phone].filter(Boolean).join(' · ') || 'Member of this community'}
+                    </p>
+                    {g.kycTier && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Identity: {humanise(g.kycTier)} · {humanise(g.kycStatus ?? 'NOT_STARTED')}
+                      </p>
+                    )}
+                  </div>
+                  <Badge tone={g.status === 'CONFIRMED' ? 'green' : g.status === 'DECLINED' ? 'red' : 'amber'}>
+                    {humanise(g.status)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DetailRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5">
+      <dt className="text-[13px] text-slate-500">{label}</dt>
+      <dd className={`tnum text-[13px] ${strong ? 'font-bold text-navy-900' : 'font-medium text-navy-900'}`}>
         {value}
       </dd>
     </div>

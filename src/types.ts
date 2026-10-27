@@ -30,6 +30,8 @@ export interface CommunitySummary {
   membershipStatus: 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED' | 'LEFT';
   status: CommunityStatus;
   memberCount: number;
+  /** Verified but the public listing page is still a draft: the portal gates on this. */
+  listingSetupRequired: boolean;
 }
 
 export interface PortalSession {
@@ -41,6 +43,30 @@ export interface PortalSession {
 export type CommunityStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED' | 'REJECTED';
 
 // ───────────────────────────── Dashboard ─────────────────────────────
+
+export interface CommunityWallet {
+  depositAccount: { accountNumber: string; bankName: string; accountName: string } | null;
+  id: string;
+  accounts: Array<{ currencyCode: string; available: Money; pending: Money; held: Money }>;
+}
+
+export interface WalletTransaction {
+  id: string;
+  reference: string;
+  type: string;
+  status: string;
+  credit: boolean;
+  amount: Money;
+  currencyCode: string;
+  counterparty: string | null;
+  narration: string | null;
+  createdAt: IsoDate;
+}
+
+export interface WalletData {
+  wallet: CommunityWallet | null;
+  transactions: WalletTransaction[];
+}
 
 export interface DashboardData {
   community: {
@@ -56,10 +82,7 @@ export interface DashboardData {
     createdAt: IsoDate;
   };
   members: { active: number; pendingApplications: number };
-  wallet: {
-    id: string;
-    accounts: Array<{ currencyCode: string; available: Money; pending: Money; held: Money }>;
-  } | null;
+  wallet: CommunityWallet | null;
   ajo: { groups: number; active: number; arrears: Money; obligationsOutstanding: number };
   lending: {
     applications: number;
@@ -188,6 +211,9 @@ export interface JoinRequest {
   applicationNote: string | null;
   appliedAt: IsoDate;
   kycStatus: string;
+  kycTier: string;
+  /** Tier 2 reached (or fully approved) — the same bar the join gate enforces. */
+  identityVerified: boolean;
   review: {
     stage: JoinReviewStage;
     source?: string;
@@ -224,6 +250,8 @@ export interface Listing {
   joinMode: 'REQUEST' | 'OPEN' | 'INVITE_ONLY';
   entryFee: Money;
   requirements: string[];
+  tags: string[];
+  coverImageUrl: string | null;
   requireReferee: boolean;
   requireIdCheck: boolean;
   showMemberCount: boolean;
@@ -246,6 +274,7 @@ export interface Listing {
     name: string;
     city: string | null;
     category: string | null;
+    logoUrl: string | null;
   } | null;
   stats: { views: number; requests: number; approved: number };
 }
@@ -790,4 +819,115 @@ export interface NotificationItem {
   isRead: boolean;
   createdAt: IsoDate;
   metadata?: Record<string, unknown> | null;
+}
+
+// ───────────────────────────── Welfare ─────────────────────────────
+
+export type WelfareStatus = 'SUBMITTED' | 'INFO_REQUESTED' | 'APPROVED' | 'REJECTED' | 'PAID';
+
+export interface WelfareRequestRow {
+  id: string;
+  reference: string;
+  type: 'MEDICAL' | 'BEREAVEMENT' | 'EDUCATION';
+  amount: string;
+  story: string;
+  status: WelfareStatus;
+  communityId: string;
+  decidedAt: IsoDate | null;
+  paidAt: IsoDate | null;
+  createdAt: IsoDate;
+  memberName: string;
+}
+
+export interface WelfareRequestDetail extends Omit<WelfareRequestRow, 'memberName'> {
+  communityName: string;
+  messages: {
+    id: string;
+    text: string;
+    attachmentUrl: string | null;
+    fromOfficer: boolean;
+    authorName: string;
+    authorTitle: string | null;
+    at: IsoDate;
+  }[];
+}
+
+export interface Opportunity {
+  id: string;
+  title: string;
+  kind: 'PROGRAMME' | 'PARTNER_OFFER';
+  description: string;
+  detail: string | null;
+  closesAt: IsoDate | null;
+  isActive: boolean;
+  createdAt: IsoDate;
+}
+
+/** A contribution group as the portal's community-scoped endpoint returns it. */
+export interface CommunityGroupRow {
+  groupId: string;
+  name: string;
+  description: string | null;
+  status: string;
+  contributionAmount: Money;
+  currencyCode: string;
+  frequency: string;
+  memberCount: number;
+  memberLimit: number;
+  startDate: IsoDate;
+  payoutSelectionMode: string;
+  rulesVersion: number;
+  isOpen: boolean;
+  myStatus: string | null;
+  invitationCode?: string;
+  pendingRequests?: number;
+  activeCycle: { id: string; cycleNumber: number; totalPeriods: number; status: string } | null;
+}
+
+export interface AjoJoinRequestRow {
+  membershipId: string;
+  userId: string;
+  name: string;
+  phone: string;
+  kycTier: string;
+  kycApproved: boolean;
+  acceptedRules: boolean;
+  requestedAt: IsoDate;
+}
+
+/** Full loan application, as the committee reviews it. */
+export interface LoanApplicationDetail extends Omit<Loan, 'borrower'> {
+  createdAt: IsoDate;
+  groupName: string;
+  termsAcceptedAt: IsoDate | null;
+  interestAmount: Money;
+  processingFee: Money;
+  netDisbursed: Money;
+  approvedAt: IsoDate | null;
+  reviewNotes: string | null;
+  productName: string | null;
+  borrower: {
+    userId: string;
+    memberId: string | null;
+    name: string;
+    email: string;
+    phone: string;
+    kycTier: string;
+    kycStatus: string;
+    membershipStatus: string;
+    memberSince: IsoDate | null;
+    savingsBalance: Money | null;
+  } | null;
+  guarantors: {
+    id: string;
+    userId: string | null;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    external?: boolean;
+    kycTier?: string | null;
+    kycStatus?: string | null;
+    status: 'PENDING' | 'CONFIRMED' | 'DECLINED';
+  }[];
+  schedule: { number: number; amount: Money; dueDate: IsoDate; status: 'PAID' | 'SCHEDULED' }[];
 }

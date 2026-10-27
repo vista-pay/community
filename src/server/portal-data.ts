@@ -21,6 +21,7 @@ interface RawCommunity {
   membershipStatus: CommunitySummary['membershipStatus'];
   status: CommunitySummary['status'];
   memberCount: number;
+  listingSetupRequired: boolean;
 }
 
 /**

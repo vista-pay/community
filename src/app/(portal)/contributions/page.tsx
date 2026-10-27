@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
-import { apiServer, isKycRequired } from '@/server/portal-data';
+import { communityGet, isKycRequired } from '@/server/portal-data';
 import { KycRequiredPage } from '@/components/kyc-required';
-import type { AjoGroupSummary } from '@/types';
+import type { CommunityGroupRow } from '@/types';
 import { ContributionsClient } from './contributions-client';
 
 export const metadata: Metadata = { title: 'Contributions & Ajo' };
 
 export default async function ContributionsPage() {
-  let groups: AjoGroupSummary[];
+  let groups: CommunityGroupRow[];
   try {
-    groups = await apiServer<AjoGroupSummary[]>('/ajo-groups');
+    // Community-scoped on purpose: staff manage these groups without holding
+    // a seat in them, so a membership-based list would come back empty.
+    groups = await communityGet<CommunityGroupRow[]>('/ajo-groups');
   } catch (error) {
     if (isKycRequired(error)) {
       return (

@@ -103,7 +103,7 @@ export function JoinRequestsClient({ initial }: { initial: JoinRequest[] }) {
     <>
       <PageHeader
         title="Join requests"
-        subtitle="Applications from the Vista app and your public listing"
+        subtitle="Applications from the Rendi app and your public listing"
       />
 
       <Tabs
@@ -292,13 +292,14 @@ function checkList(request: JoinRequest) {
       state: r.phoneVerified ? ('pass' as const) : ('pending' as const),
     },
     {
-      label: `KYC ${humanise(request.kycStatus).toLowerCase()}`,
-      state:
-        request.kycStatus === 'APPROVED' || request.kycStatus === 'VERIFIED'
-          ? ('pass' as const)
-          : request.kycStatus === 'REJECTED'
-            ? ('fail' as const)
-            : ('pending' as const),
+      label: request.identityVerified
+        ? `Identity verified (${humanise(request.kycTier).replace('Tier ', 'Tier ')})`
+        : `KYC ${humanise(request.kycStatus).toLowerCase()}`,
+      state: request.identityVerified
+        ? ('pass' as const)
+        : request.kycStatus === 'REJECTED'
+          ? ('fail' as const)
+          : ('pending' as const),
     },
     ...(r.refereeState && r.refereeState !== 'NOT_REQUIRED'
       ? [
@@ -397,10 +398,11 @@ function RequestDetail({
         </div>
       </dl>
 
-      {request.kycStatus !== 'APPROVED' && request.kycStatus !== 'VERIFIED' && (
-        <Callout tone="warning" title="Identity not verified by Vista">
-          This applicant&apos;s KYC is {humanise(request.kycStatus).toLowerCase()}. You can still
-          admit them, but Vista has not confirmed who they are.
+      {!request.identityVerified && (
+        <Callout tone="warning" title="Identity not verified by Rendi">
+          This applicant has not reached Tier 2 ({humanise(request.kycTier)},{' '}
+          {humanise(request.kycStatus).toLowerCase()}). You can still admit them, but Rendi has not
+          confirmed who they are.
         </Callout>
       )}
 
