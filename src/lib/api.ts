@@ -69,7 +69,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 }
 
 export const get = <T,>(path: string, params?: Params) => api<T>(path, { params });
-export const post = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'POST', body });
+export const post = <T,>(
+  path: string,
+  body?: unknown,
+  options: Omit<RequestOptions, 'body' | 'method'> = {},
+) => api<T>(path, { ...options, method: 'POST', body });
 export const patch = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'PATCH', body });
 export const del = <T,>(path: string) => api<T>(path, { method: 'DELETE' });
 

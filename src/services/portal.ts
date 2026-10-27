@@ -342,7 +342,12 @@ export const portalApi = {
   reviewLoan: (loanId: string, approve: boolean, interestRate?: string, notes?: string) =>
     post<Loan>(`/ajo-loans/${loanId}/review`, { approve, interestRate, notes }),
 
-  disburseLoan: (loanId: string) => post<Loan>(`/ajo-loans/${loanId}/disburse`),
+  disburseLoan: (loanId: string) =>
+    post<Loan>(`/ajo-loans/${loanId}/disburse`, undefined, {
+      headers: {
+        'Idempotency-Key': `ajo-loan-disbursement-${loanId}`,
+      },
+    }),
 
   // ───────────────────────────── Ajo ─────────────────────────────
 
