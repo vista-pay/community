@@ -32,6 +32,8 @@ export function OpportunitiesClient({ initial }: { initial: Opportunity[] }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState<'PROGRAMME' | 'PARTNER_OFFER'>('PROGRAMME');
+  const [category, setCategory] = useState('');
+  const [howToApply, setHowToApply] = useState('');
   const [description, setDescription] = useState('');
   const [detail, setDetail] = useState('');
   const [closesAt, setClosesAt] = useState('');
@@ -48,8 +50,10 @@ export function OpportunitiesClient({ initial }: { initial: Opportunity[] }) {
       portalApi.upsertOpportunity(communityId, {
         title: title.trim(),
         kind,
+        category: category.trim() || null,
         description: description.trim(),
         detail: detail.trim() || null,
+        howToApply: howToApply.trim() || null,
         closesAt: closesAt || null,
       }),
     {
@@ -57,8 +61,10 @@ export function OpportunitiesClient({ initial }: { initial: Opportunity[] }) {
         toast('Published', 'success', 'Members see it in their app immediately.');
         setCreating(false);
         setTitle('');
+        setCategory('');
         setDescription('');
         setDetail('');
+        setHowToApply('');
         setClosesAt('');
         await refresh();
       },
@@ -103,7 +109,20 @@ export function OpportunitiesClient({ initial }: { initial: Opportunity[] }) {
                   placeholder="SME growth training — Ikeja cohort"
                 />
               </Field>
-              <Field label="Kind" htmlFor="op-kind">
+              <Field
+                label="Category"
+                htmlFor="op-category"
+                optional
+                hint="Education, Health, Business… shown with the sub-category below"
+              >
+                <Input
+                  id="op-category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Education"
+                />
+              </Field>
+              <Field label="Sub-category" htmlFor="op-kind">
                 <Select id="op-kind" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
                   <option value="PROGRAMME">Programme</option>
                   <option value="PARTNER_OFFER">Partner offer</option>
@@ -122,6 +141,20 @@ export function OpportunitiesClient({ initial }: { initial: Opportunity[] }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Detail line" htmlFor="op-detail" optional hint="e.g. 6 weekly sessions · free for members · 40 places">
                 <Input id="op-detail" value={detail} onChange={(e) => setDetail(e.target.value)} />
+              </Field>
+              <Field
+                label="How to register"
+                htmlFor="op-apply"
+                optional
+                hint="Exactly what a member should do — steps, documents, who to contact"
+              >
+                <Textarea
+                  id="op-apply"
+                  rows={3}
+                  value={howToApply}
+                  onChange={(e) => setHowToApply(e.target.value)}
+                  placeholder={'1. Tap Register in the app\n2. Bring your member card to the office\n3. ...'}
+                />
               </Field>
               <Field label="Closes" htmlFor="op-closes" optional>
                 <Input id="op-closes" type="date" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} />

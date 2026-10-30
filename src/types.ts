@@ -454,8 +454,8 @@ export interface Poll {
   closesAt: IsoDate;
   status: PollStatus;
   certifiedAt: IsoDate | null;
-  /** Null while voting is open — a running tally would sway the undecided. */
-  options: Array<{ id: string; label: string; votes: number | null }>;
+  /** Live tally; voters listed per option unless the ballot is anonymous. */
+  options: Array<{ id: string; label: string; votes: number; voters?: string[] }>;
   totalVotes: number;
   eligibleCount: number;
   turnout: number;
@@ -514,6 +514,22 @@ export interface SavingsAccountRow {
   balance: Money;
   status: 'ACTIVE' | 'DORMANT' | 'CLOSED';
   openedAt: IsoDate;
+}
+
+export interface SavingsWithdrawalRequestRow {
+  id: string;
+  reference: string;
+  memberName: string;
+  productName: string;
+  accountNumber: string;
+  accountBalance: string;
+  amount: string;
+  note: string | null;
+  status: 'PENDING' | 'PAID' | 'REJECTED';
+  reviewNote: string | null;
+  requestedAt: IsoDate;
+  decidedAt: IsoDate | null;
+  paidAt: IsoDate | null;
 }
 
 export interface SavingsOverview {
@@ -660,6 +676,10 @@ export interface AjoGroupDetail {
   currencyCode: string;
   memberLimit: number;
   invitationCode: string | null;
+  /** How payout numbers are decided: ADMIN_ASSIGNED, MEMBER_SELECTED or RANDOM_DRAW. */
+  payoutSelectionMode: string;
+  /** MEMBER_SELECTED only: after this, unclaimed numbers can be auto-assigned. */
+  selectionDeadline: IsoDate | null;
   pool: { balance: Money } | null;
   members: Array<{
     membershipId: string;
@@ -694,6 +714,32 @@ export interface ContributionBoard {
   members: ContributionBoardRow[];
   collected: Money;
   expected: Money;
+}
+
+/** One payout turn, as `/ajo-cycles/:id/payouts` returns it. */
+export interface AjoPayoutRow {
+  id: string;
+  position: number;
+  recipient: string;
+  payoutReference: string;
+  status:
+    | 'SCHEDULED'
+    | 'PENDING_APPROVAL'
+    | 'APPROVED'
+    | 'PROCESSING'
+    | 'PAID'
+    | 'FAILED'
+    | 'REVERSED';
+  grossAmount: Money;
+  vistaFee: Money;
+  organizerFee: Money;
+  providerFee: Money;
+  tax: Money;
+  netAmount: Money;
+  currencyCode: string;
+  scheduledFor: IsoDate;
+  paidAt: IsoDate | null;
+  failureReason: string | null;
 }
 
 export interface PayoutPosition {
@@ -828,7 +874,8 @@ export type WelfareStatus = 'SUBMITTED' | 'INFO_REQUESTED' | 'APPROVED' | 'REJEC
 export interface WelfareRequestRow {
   id: string;
   reference: string;
-  type: 'MEDICAL' | 'BEREAVEMENT' | 'EDUCATION';
+  type: 'MEDICAL' | 'BEREAVEMENT' | 'EDUCATION' | 'OTHER';
+  customType: string | null;
   amount: string;
   story: string;
   status: WelfareStatus;
@@ -856,8 +903,10 @@ export interface Opportunity {
   id: string;
   title: string;
   kind: 'PROGRAMME' | 'PARTNER_OFFER';
+  category: string | null;
   description: string;
   detail: string | null;
+  howToApply: string | null;
   closesAt: IsoDate | null;
   isActive: boolean;
   createdAt: IsoDate;

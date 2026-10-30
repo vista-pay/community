@@ -106,6 +106,8 @@ export function SavingsClient({
         </Callout>
       )}
 
+      <WithdrawalRequestsCard onSettled={() => void overview.refresh()} />
+
       <Tabs
         className="mt-6"
         value={tab}
@@ -687,5 +689,113 @@ function StatementModal({
         </>
       )}
     </Modal>
+  );
+}
+
+/**
+ * Member withdrawal requests from the app. Approving pays on the spot —
+ * community wallet → member wallet, savings ledger and books in one
+ * transaction — so the card only offers it to someone ready to move money.
+ */
+function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
+  const communityId = useCommunityId();
+  const { toast } = useToast();
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+
+  const requests = useQuery(
+    () => portalApi.savingsWithdrawalRequests(communityId),
+    [communityId],
+  );
+
+  const decide = useMutation(
+    (requestId: string, approve: boolean, note?: string) =>
+      portalApi.decideSavingsWithdrawal(communityId, requestId, approve, note),
+    {
+      onSuccess: async (result) => {
+        toast(
+          result.status === 'PAID' ? 'Withdrawal paid' : 'Request rejected',
+          'success',
+          result.status === 'PAID'
+            ? 'The money has left the community wallet for the member.'
+            : 'The member sees your reason in the app.',
+        );
+        setRejectingId(null);
+        setRejectNote('');
+        await requests.refresh();
+        onSettled();
+      },
+      onError: (message) => toast('Could not record the decision', 'error', message),
+    },
+  );
+
+  const pending = (requests.data ?? []).filter((r) => r.status === 'PENDING');
+  if (pending.length === 0) return null;
+
+  return (
+    <Card className="mt-4">
+      <CardHeader
+        title={`Withdrawal requests (${pending.length})`}
+        subtitle="Members asking for part — or all — of their savings back"
+      />
+      <div className="space-y-3 px-5 py-4">
+        {pending.map((r) => (
+          <div key={r.id} className="rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-navy-900">
+                  {r.memberName} · {money(r.amount)}
+                  {r.amount === r.accountBalance && (
+                    <Badge tone="amber" className="ml-2">Full withdrawal</Badge>
+                  )}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {r.productName} · balance {money(r.accountBalance)} · asked {date(r.requestedAt)}
+                </p>
+                {r.note && <p className="mt-1 text-xs italic text-slate-600">“{r.note}”</p>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                <Button
+                  size="xs"
+                  disabled={decide.pending}
+                  onClick={() => decide.run(r.id, true)}
+                >
+                  Approve & pay
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={decide.pending}
+                  onClick={() => {
+                    setRejectingId(rejectingId === r.id ? null : r.id);
+                    setRejectNote('');
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            </div>
+            {rejectingId === r.id && (
+              <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row">
+                <Input
+                  value={rejectNote}
+                  onChange={(e) => setRejectNote(e.target.value)}
+                  placeholder="Reason the member can act on"
+                  className="flex-1"
+                />
+                <Button
+                  size="xs"
+                  variant="danger"
+                  disabled={decide.pending || rejectNote.trim().length < 5}
+                  onClick={() => decide.run(r.id, false, rejectNote.trim())}
+                >
+                  Confirm rejection
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

@@ -27,7 +27,11 @@ const STATUS_META: Record<WelfareStatus, { label: string; tone: 'green' | 'amber
   PAID: { label: 'Paid', tone: 'green' },
 };
 
-const TYPE_LABEL = { MEDICAL: 'Medical', BEREAVEMENT: 'Bereavement', EDUCATION: 'Education' } as const;
+const TYPE_LABEL = { MEDICAL: 'Medical', BEREAVEMENT: 'Bereavement', EDUCATION: 'Education', OTHER: 'Other' } as const;
+
+/** "Other" alone says nothing — show what the member actually asked for. */
+const typeLabel = (r: { type: keyof typeof TYPE_LABEL; customType: string | null }) =>
+  r.type === 'OTHER' && r.customType ? r.customType : TYPE_LABEL[r.type];
 
 /**
  * The welfare committee's queue. A request arrives from the member's app,
@@ -133,7 +137,7 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
                   <Badge tone={STATUS_META[r.status].tone}>{STATUS_META[r.status].label}</Badge>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {r.reference} · {TYPE_LABEL[r.type]} · {formatCurrency(r.amount)}
+                  {r.reference} · {typeLabel(r)} · {formatCurrency(r.amount)}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-400">{formatDate(r.createdAt)}</p>
               </button>
@@ -157,7 +161,7 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
                 <div className="flex flex-col justify-between gap-2 px-5 py-4 sm:flex-row sm:items-center">
                   <div>
                     <h2 className="text-base font-bold text-navy-900">
-                      {TYPE_LABEL[request.type]} support · {formatCurrency(request.amount)}
+                      {typeLabel(request)} support · {formatCurrency(request.amount)}
                     </h2>
                     <p className="mt-0.5 text-xs text-slate-500">
                       {request.reference} · submitted {formatDate(request.createdAt)}

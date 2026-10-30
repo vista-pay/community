@@ -14,6 +14,7 @@ import type {
   AccountingPeriod,
   AjoGroupDetail,
   AjoGroupSummary,
+  AjoPayoutRow,
   Announcement,
   AuditEntry,
   BookAccount,
@@ -49,6 +50,7 @@ import type {
   SavingsOverview,
   SavingsProduct,
   SavingsStatement,
+  SavingsWithdrawalRequestRow,
   ServiceCatalogItem,
   ServiceRequest,
   Statements,
@@ -288,6 +290,19 @@ export const portalApi = {
 
   // ───────────────────────────── Savings ─────────────────────────────
 
+  savingsWithdrawalRequests: (communityId: string) =>
+    get<SavingsWithdrawalRequestRow[]>(`/communities/${communityId}/savings/withdrawal-requests`),
+  decideSavingsWithdrawal: (
+    communityId: string,
+    requestId: string,
+    approve: boolean,
+    note?: string,
+  ) =>
+    patch<{ id: string; status: string }>(
+      `/communities/${communityId}/savings/withdrawal-requests/${requestId}`,
+      { approve, note },
+    ),
+
   savingsProducts: (communityId: string) =>
     get<SavingsProduct[]>(path(communityId, '/savings/products')),
 
@@ -342,6 +357,12 @@ export const portalApi = {
   reviewLoan: (loanId: string, approve: boolean, interestRate?: string, notes?: string) =>
     post<Loan>(`/ajo-loans/${loanId}/review`, { approve, interestRate, notes }),
 
+  /** Records an (external) guarantor's answer on their behalf — officer only. */
+  reviewGuarantor: (loanId: string, guarantorId: string, confirm: boolean) =>
+    post<{ id: string; status: string }>(`/ajo-loans/${loanId}/guarantors/${guarantorId}/review`, {
+      confirm,
+    }),
+
   disburseLoan: (loanId: string) =>
     post<Loan>(`/ajo-loans/${loanId}/disburse`, undefined, {
       headers: {
@@ -392,9 +413,24 @@ export const portalApi = {
 
   draws: (cycleId: string) => get<unknown[]>(`/ajo-cycles/${cycleId}/draws`),
 
-  payouts: (cycleId: string) => get<unknown[]>(`/ajo-cycles/${cycleId}/payouts`),
+  payouts: (cycleId: string) => get<AjoPayoutRow[]>(`/ajo-cycles/${cycleId}/payouts`),
 
-  approvePayout: (payoutId: string) => post<unknown>(`/ajo-payouts/${payoutId}/approve`),
+  /**
+   * Both payout endpoints require an Idempotency-Key. A fresh key per click is
+   * right here: the server's own row logic makes a duplicate request return
+   * the existing payout, and approvals lock the row.
+   */
+  requestPayout: (positionId: string) =>
+    post<AjoPayoutRow>(`/ajo-payouts/positions/${positionId}/request`, undefined, {
+      headers: { 'Idempotency-Key': `ajo-payout-request-${crypto.randomUUID()}` },
+    }),
+
+  approvePayout: (payoutId: string, approve: boolean, reason?: string) =>
+    post<AjoPayoutRow>(
+      `/ajo-payouts/${payoutId}/approve`,
+      { approve, reason },
+      { headers: { 'Idempotency-Key': `ajo-payout-approval-${crypto.randomUUID()}` } },
+    ),
 
   groupEarnings: (groupId: string) => get<unknown>(`/ajo-groups/${groupId}/earnings`),
 
@@ -436,8 +472,17 @@ export const portalApi = {
   subscription: (subscriptionId: string) =>
     get<Subscription>(`/community-subscriptions/${subscriptionId}`),
 
-  checkout: (communityId: string, planId: string) =>
-    post<Subscription>('/community-subscriptions/checkout', { communityId, planId }),
+  /**
+   * `idempotencyKey` is required by the API and must be stable across retries
+   * of one confirmation but fresh for each new checkout intent — the server
+   * replays the original response for a reused key for 24 hours.
+   */
+  checkout: (communityId: string, planId: string, idempotencyKey: string) =>
+    post<Subscription>(
+      '/community-subscriptions/checkout',
+      { communityId, planId },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    ),
 
   cancelSubscription: (subscriptionId: string, reason: string) =>
     post<Subscription>(`/community-subscriptions/${subscriptionId}/cancel`, { reason }),

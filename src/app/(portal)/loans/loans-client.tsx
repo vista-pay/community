@@ -195,7 +195,7 @@ export function LoansClient({
                   header: '',
                   align: 'right',
                   cell: (l) => (
-                    <span className="flex justify-end gap-1.5">
+                    <span className="flex flex-wrap justify-end gap-1.5">
                       <Button size="xs" variant="secondary" onClick={() => setViewing(l)}>
                         Review application
                       </Button>
@@ -640,8 +640,26 @@ function LoanDetailModal({
   onDecide: (approve: boolean) => void;
   onDisburse: () => void;
 }) {
-  const { data, error } = useQuery<LoanApplicationDetail>(() => portalApi.loanDetail(loan.id), [loan.id]);
+  const { data, error, refresh } = useQuery<LoanApplicationDetail>(
+    () => portalApi.loanDetail(loan.id),
+    [loan.id],
+  );
   const d = data;
+  const { toast } = useToast();
+
+  // Recording the answer an external guarantor gave off-platform (a call, a
+  // signed form). Platform guarantors normally answer in their own app, but
+  // the officer path also unblocks one who cannot.
+  const guarantorReview = useMutation(
+    (guarantorId: string, confirm: boolean) => portalApi.reviewGuarantor(loan.id, guarantorId, confirm),
+    {
+      onSuccess: async () => {
+        toast('Guarantor answer recorded', 'success');
+        await refresh();
+      },
+      onError: (message) => toast('Could not record the answer', 'error', message),
+    },
+  );
 
   return (
     <Modal
@@ -687,7 +705,15 @@ function LoanDetailModal({
               <p className="text-xs text-slate-500">{d.borrower?.phone}</p>
               {d.borrower && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  <Badge tone={d.borrower.kycStatus === 'APPROVED' ? 'green' : 'amber'}>
+                  <Badge
+                    tone={
+                      d.borrower.kycStatus === 'APPROVED' || d.borrower.kycStatus === 'VERIFIED'
+                        ? 'green'
+                        : d.borrower.kycStatus === 'REJECTED'
+                          ? 'red'
+                          : 'amber'
+                    }
+                  >
                     <ShieldCheck className="mr-1 inline h-3 w-3" />
                     {humanise(d.borrower.kycTier)} · {humanise(d.borrower.kycStatus)}
                   </Badge>
@@ -771,14 +797,14 @@ function LoanDetailModal({
               {d.guarantors.map((g) => (
                 <div
                   key={g.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3"
+                  className="flex flex-col gap-3 rounded-xl border border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-navy-900">
+                    <p className="text-sm font-medium text-navy-900 sm:truncate">
                       {g.name}
                       {g.external && <span className="ml-1.5 text-xs text-slate-400">external</span>}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="break-words text-xs text-slate-500">
                       {[g.email, g.phone].filter(Boolean).join(' · ') || 'Member of this community'}
                     </p>
                     {g.kycTier && (
@@ -787,9 +813,31 @@ function LoanDetailModal({
                       </p>
                     )}
                   </div>
-                  <Badge tone={g.status === 'CONFIRMED' ? 'green' : g.status === 'DECLINED' ? 'red' : 'amber'}>
-                    {humanise(g.status)}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                    <Badge tone={g.status === 'CONFIRMED' ? 'green' : g.status === 'DECLINED' ? 'red' : 'amber'}>
+                      {humanise(g.status)}
+                    </Badge>
+                    {g.status === 'PENDING' && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={guarantorReview.pending}
+                          onClick={() => guarantorReview.run(g.id, true)}
+                          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          disabled={guarantorReview.pending}
+                          onClick={() => guarantorReview.run(g.id, false)}
+                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                        >
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

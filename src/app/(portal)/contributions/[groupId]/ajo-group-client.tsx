@@ -31,24 +31,53 @@ import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
 import { percentOf } from '@/lib/money';
 import { InvitePanel } from '@/components/ajo/invite-panel';
-import type { AjoGroupDetail, ContributionBoard, PayoutPosition } from '@/types';
+import type { AjoGroupDetail, AjoPayoutRow, ContributionBoard, PayoutPosition } from '@/types';
 
 type Tab = 'board' | 'positions' | 'members';
 
 export function AjoGroupClient({
   group,
-  cycleId,
+  cycle,
   initialBoard,
   initialPositions,
 }: {
   group: AjoGroupDetail;
-  cycleId: string | null;
+  cycle: AjoGroupDetail['cycles'][number] | null;
   initialBoard: ContributionBoard | null;
   initialPositions: PayoutPosition[];
 }) {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('board');
   const [drawing, setDrawing] = useState(false);
+  const [confirmingLock, setConfirmingLock] = useState(false);
+
+  // Obligations and positions exist from lock onward; a draft has neither.
+  const cycleStarted = cycle?.status === 'ACTIVE' || cycle?.status === 'LOCKED';
+  const cycleId = cycleStarted ? cycle.id : null;
+
+  const createCycle = useMutation(() => portalApi.createCycle(group.id, {}), {
+    onSuccess: () => {
+      toast('Cycle created', 'success', 'Now lock the roster to open contributions.');
+      window.location.reload();
+    },
+    onError: (message) => toast('Could not create the cycle', 'error', message),
+  });
+
+  const lockCycle = useMutation(() => portalApi.lockCycle(cycle!.id), {
+    onSuccess: () => {
+      toast('Cycle started', 'success', 'Members can now contribute.');
+      window.location.reload();
+    },
+    onError: (message) => toast('Could not lock the cycle', 'error', message),
+  });
+
+  const activateCycle = useMutation(() => portalApi.activateCycle(cycle!.id), {
+    onSuccess: () => {
+      toast('Cycle activated', 'success');
+      window.location.reload();
+    },
+    onError: (message) => toast('Could not activate the cycle', 'error', message),
+  });
 
   const board = useQuery<ContributionBoard | null>(
     () => (cycleId ? portalApi.contributionBoard(cycleId) : Promise.resolve(null)),
@@ -61,6 +90,42 @@ export function AjoGroupClient({
     [cycleId],
     { initial: initialPositions, enabled: Boolean(cycleId) },
   );
+
+  const payouts = useQuery<AjoPayoutRow[]>(
+    () => (cycleId ? portalApi.payouts(cycleId) : Promise.resolve([])),
+    [cycleId],
+    { enabled: Boolean(cycleId) },
+  );
+  const payoutByPosition = new Map((payouts.data ?? []).map((p) => [p.position, p]));
+
+  // One in-flight payout action at a time, keyed so only its row spins.
+  const [payoutActing, setPayoutActing] = useState<string | null>(null);
+  const runPayoutAction = async (key: string, action: () => Promise<unknown>, success: string) => {
+    setPayoutActing(key);
+    try {
+      await action();
+      toast(success, 'success');
+      await Promise.all([payouts.refresh(), positions.refresh()]);
+    } catch (actionError) {
+      toast(
+        'Payout action failed',
+        'error',
+        actionError instanceof Error ? actionError.message : 'Try again.',
+      );
+    } finally {
+      setPayoutActing(null);
+    }
+  };
+
+  const rejectPayout = (payoutId: string) => {
+    const reason = window.prompt('Reason for rejecting this payout (recorded on the audit trail):');
+    if (reason === null) return;
+    void runPayoutAction(
+      `reject-${payoutId}`,
+      () => portalApi.approvePayout(payoutId, false, reason.trim() || undefined),
+      'Payout rejected',
+    );
+  };
 
   const remind = useMutation(() => portalApi.sendReminders(cycleId!), {
     onSuccess: (result) =>
@@ -91,6 +156,19 @@ export function AjoGroupClient({
   const collectedPercent = b ? percentOf(b.collected, b.expected) : 0;
   const unpaid = (b?.members ?? []).filter((m) => m.status !== 'PAID');
 
+  // Which assignment tools apply is decided by the group's selection mode —
+  // offering a draw to a member-selected group just earns a 400.
+  const mode = group.payoutSelectionMode;
+  const unassigned = (positions.data ?? []).filter((p) => !p.holder);
+  const canDraw = mode === 'RANDOM_DRAW' && unassigned.length > 0;
+  const canAutoAssign = mode === 'MEMBER_SELECTED' && unassigned.length > 0;
+  const positionHint =
+    mode === 'RANDOM_DRAW'
+      ? 'Order is decided by the spin-to-pick draw.'
+      : mode === 'MEMBER_SELECTED'
+        ? 'Members pick their own numbers in the app; auto-assign fills whatever is unclaimed after the selection deadline.'
+        : 'Numbers are assigned by the organizer from the mobile app (Manage → Payout positions).';
+
   return (
     <>
       <PageHeader
@@ -113,19 +191,53 @@ export function AjoGroupClient({
               >
                 Remind {unpaid.length || ''}
               </Button>
-              <Button icon={<Dices className="h-4 w-4" />} onClick={() => setDrawing(true)}>
-                Run draw
-              </Button>
+              {canDraw ? (
+                <Button icon={<Dices className="h-4 w-4" />} onClick={() => setDrawing(true)}>
+                  Run draw
+                </Button>
+              ) : null}
             </>
           ) : null
         }
       />
 
-      {!cycleId && (
+      {!cycle || cycle.status === 'COMPLETED' || cycle.status === 'CANCELLED' ? (
         <Callout tone="warning" title="No cycle is running" className="mb-6">
-          A cycle is what members actually contribute to. Create one to start collecting.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              A cycle is what members actually contribute to. Create one to start collecting —
+              it needs at least one active member.
+            </span>
+            <Button size="sm" loading={createCycle.pending} onClick={() => void createCycle.run()}>
+              Create cycle
+            </Button>
+          </div>
         </Callout>
-      )}
+      ) : cycle.status === 'DRAFT' ? (
+        <Callout tone="info" title="Cycle drafted — not started yet" className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Locking freezes the member list, creates all {cycle.totalPeriods} rounds of the
+              contribution schedule, and lets members start paying.
+            </span>
+            <Button size="sm" onClick={() => setConfirmingLock(true)}>
+              Lock roster &amp; start contributions
+            </Button>
+          </div>
+        </Callout>
+      ) : cycle.status === 'LOCKED' ? (
+        <Callout tone="info" title="Almost there — activate the cycle" className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              The roster is locked and members can already pay. Assign the payout order (or run the
+              draw), then activate.
+            </span>
+            <Button size="sm" loading={activateCycle.pending} onClick={() => void activateCycle.run()}>
+              Activate cycle
+            </Button>
+          </div>
+        </Callout>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat
@@ -217,9 +329,9 @@ export function AjoGroupClient({
           <Card>
             <CardHeader
               title="Payout order"
-              subtitle="Who collects the pool, and when"
+              subtitle={`Who collects the pool, and when. ${positionHint}`}
               action={
-                cycleId && (positions.data ?? []).every((p) => !p.holder) ? (
+                cycleId && canAutoAssign ? (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -227,7 +339,7 @@ export function AjoGroupClient({
                     loading={autoAssign.pending}
                     onClick={() => void autoAssign.run()}
                   >
-                    Auto-assign
+                    Auto-assign unclaimed
                   </Button>
                 ) : null
               }
@@ -259,18 +371,97 @@ export function AjoGroupClient({
                 {
                   key: 'status',
                   header: 'Status',
-                  cell: (p) => (
-                    <Badge tone={p.payout?.status === 'PAID' ? 'green' : 'slate'}>
-                      {humanise(p.payout?.status ?? p.status)}
-                    </Badge>
-                  ),
+                  cell: (p) => {
+                    const payout = payoutByPosition.get(p.position);
+                    return (
+                      <div>
+                        <Badge
+                          tone={
+                            payout?.status === 'PAID'
+                              ? 'green'
+                              : payout?.status === 'PENDING_APPROVAL'
+                                ? 'amber'
+                                : payout?.status === 'FAILED' || payout?.status === 'REVERSED'
+                                  ? 'red'
+                                  : 'slate'
+                          }
+                        >
+                          {humanise(payout?.status ?? p.status)}
+                        </Badge>
+                        {payout?.failureReason ? (
+                          <p className="mt-1 text-xs text-red-600">{payout.failureReason}</p>
+                        ) : null}
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  align: 'right',
+                  cell: (p) => {
+                    const payout = payoutByPosition.get(p.position);
+                    if (payout?.status === 'PENDING_APPROVAL') {
+                      return (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={payoutActing === `reject-${payout.id}`}
+                            onClick={() => rejectPayout(payout.id)}
+                          >
+                            Reject
+                          </Button>
+                          <Button
+                            size="sm"
+                            loading={payoutActing === `approve-${payout.id}`}
+                            onClick={() =>
+                              void runPayoutAction(
+                                `approve-${payout.id}`,
+                                () => portalApi.approvePayout(payout.id, true),
+                                'Payout approved — pool settled to the recipient',
+                              )
+                            }
+                          >
+                            Approve &amp; pay
+                          </Button>
+                        </div>
+                      );
+                    }
+                    // A dead payout (rejected or reversed) frees the turn to be
+                    // requested again; a settled or in-flight one offers nothing.
+                    const requestable =
+                      cycle?.status === 'ACTIVE' &&
+                      p.holder &&
+                      (!payout || payout.status === 'FAILED' || payout.status === 'REVERSED');
+                    return requestable ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={payoutActing === `request-${p.id}`}
+                        onClick={() =>
+                          void runPayoutAction(
+                            `request-${p.id}`,
+                            () => portalApi.requestPayout(p.id),
+                            'Payout requested — another organizer must approve it',
+                          )
+                        }
+                      >
+                        Request payout
+                      </Button>
+                    ) : null;
+                  },
                 },
               ]}
               empty={
                 <EmptyState
                   icon={<ListOrdered className="h-5 w-5" />}
                   title="No positions yet"
-                  body="Assign the payout order, or run a draw to decide it fairly."
+                  body={
+                    cycleId
+                      ? positionHint
+                      : 'Positions open once the cycle is locked.'
+                  }
                 />
               }
             />
@@ -313,6 +504,21 @@ export function AjoGroupClient({
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmingLock}
+        onClose={() => setConfirmingLock(false)}
+        title="Lock the roster and start contributions?"
+        confirmLabel="Lock & start"
+        loading={lockCycle.pending}
+        onConfirm={() => void lockCycle.run()}
+        body={
+          <>
+            The member list freezes as it is today, and every round&apos;s contribution schedule is
+            created. Members can start paying immediately. This cannot be undone.
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={drawing}

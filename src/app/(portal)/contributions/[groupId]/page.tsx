@@ -12,19 +12,28 @@ export default async function AjoGroupPage({ params }: { params: Promise<{ group
   const group = await apiServerSafe<AjoGroupDetail>(`/ajo-groups/${groupId}`);
   if (!group) notFound();
 
-  const activeCycle = group.cycles.find((c) => c.status === 'ACTIVE') ?? group.cycles[0] ?? null;
+  // The cycle whose lifecycle the page drives: a running one first, then a
+  // locked one awaiting activation, then a draft awaiting lock.
+  const cycle =
+    group.cycles.find((c) => c.status === 'ACTIVE') ??
+    group.cycles.find((c) => c.status === 'LOCKED') ??
+    group.cycles.find((c) => c.status === 'DRAFT') ??
+    group.cycles[0] ??
+    null;
 
-  const [board, positions] = activeCycle
+  // A draft has no obligations or positions yet — they exist from lock onward.
+  const hasSchedule = cycle && (cycle.status === 'ACTIVE' || cycle.status === 'LOCKED');
+  const [board, positions] = hasSchedule
     ? await Promise.all([
-        apiServerSafe<ContributionBoard>(`/ajo-cycles/${activeCycle.id}/contribution-board`),
-        apiServerSafe<PayoutPosition[]>(`/ajo-cycles/${activeCycle.id}/positions`),
+        apiServerSafe<ContributionBoard>(`/ajo-cycles/${cycle.id}/contribution-board`),
+        apiServerSafe<PayoutPosition[]>(`/ajo-cycles/${cycle.id}/positions`),
       ])
     : [null, null];
 
   return (
     <AjoGroupClient
       group={group}
-      cycleId={activeCycle?.id ?? null}
+      cycle={cycle}
       initialBoard={board}
       initialPositions={positions ?? []}
     />

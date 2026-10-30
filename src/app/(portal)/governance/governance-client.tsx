@@ -221,6 +221,36 @@ function MeetingsTab({
                 tone={m.quorum.met === false ? 'red' : 'brand'}
               />
 
+              {/* Every member's answer, as it arrives from the app. */}
+              {m.attendance.length > 0 && (
+                <div className="mt-3 space-y-1 text-xs text-slate-600">
+                  <p>
+                    <span className="font-semibold text-emerald-700">
+                      Going ({m.attendance.filter((a) => a.state === 'PRESENT').length}):
+                    </span>{' '}
+                    {m.attendance
+                      .filter((a) => a.state === 'PRESENT')
+                      .map((a) => a.name)
+                      .join(', ') || '—'}
+                  </p>
+                  {m.attendance.some((a) => a.state === 'APOLOGY') && (
+                    <p>
+                      <span className="font-semibold text-amber-700">
+                        Apologies ({m.attendance.filter((a) => a.state === 'APOLOGY').length}):
+                      </span>{' '}
+                      {m.attendance
+                        .filter((a) => a.state === 'APOLOGY')
+                        .map((a) => a.name)
+                        .join(', ')}
+                    </p>
+                  )}
+                  <p className="text-slate-400">
+                    {Math.max(0, m.quorum.eligible - m.attendance.length)} member
+                    {m.quorum.eligible - m.attendance.length === 1 ? '' : 's'} yet to respond
+                  </p>
+                </div>
+              )}
+
               {m.agenda.length > 0 && (
                 <ol className="mt-4 list-decimal space-y-1 pl-5 text-[13px] text-slate-600">
                   {m.agenda.map((item, i) => (
@@ -623,16 +653,6 @@ function VotesTab({
 }) {
   const { toast } = useToast();
 
-  const vote = useMutation(
-    (pollId: string, optionId: string) => portalApi.vote(communityId, pollId, optionId),
-    {
-      onSuccess: async () => {
-        toast('Your vote is recorded', 'success');
-        await onChanged();
-      },
-      onError: (message) => toast('Could not record your vote', 'error', message),
-    },
-  );
 
   const certify = useMutation((pollId: string) => portalApi.certifyPoll(communityId, pollId), {
     onSuccess: async () => {
@@ -657,7 +677,6 @@ function VotesTab({
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {polls.map((p) => {
-        const tallyVisible = p.options.some((o) => o.votes !== null);
         return (
           <Card key={p.id}>
             <CardHeader
@@ -685,27 +704,19 @@ function VotesTab({
                           {o.votes === null ? '—' : `${o.votes} (${Math.round(share)}%)`}
                         </span>
                       </div>
-                      {tallyVisible && <ProgressBar className="mt-1" value={share} />}
-                      {p.status === 'OPEN' && !p.myVote && (
-                        <Button
-                          size="xs"
-                          variant="secondary"
-                          className="mt-1.5"
-                          disabled={vote.pending}
-                          onClick={() => void vote.run(p.id, o.id)}
-                        >
-                          Vote for this
-                        </Button>
+                      <ProgressBar className="mt-1" value={share} />
+                      {o.voters && o.voters.length > 0 && (
+                        <p className="mt-1 text-xs text-slate-500">{o.voters.join(', ')}</p>
                       )}
                     </li>
                   );
                 })}
               </ul>
 
-              {!tallyVisible && p.status === 'OPEN' && (
-                <p className="mt-3 text-xs italic text-slate-500">
-                  The tally stays hidden until voting closes, so a running count cannot sway the
-                  undecided.
+              {p.status === 'OPEN' && (
+                <p className="mt-3 text-xs text-slate-500">
+                  Live count — updates as members vote.
+                  {p.isAnonymous ? ' Anonymous ballot: individual votes stay hidden.' : ''}
                 </p>
               )}
 

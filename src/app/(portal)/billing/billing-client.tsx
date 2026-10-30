@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, CreditCard, Receipt } from 'lucide-react';
 import {
   Badge,
@@ -34,14 +34,25 @@ export function BillingClient({
   const [choosing, setChoosing] = useState<SubscriptionPlan | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
-  const checkout = useMutation((planId: string) => portalApi.checkout(communityId, planId), {
-    onSuccess: () => {
-      toast('Plan changed', 'success');
-      setChoosing(null);
-      window.location.reload();
+  // One key per checkout intent: minted when the confirm dialog opens, reused
+  // across retries of that confirmation so a timed-out request replays the
+  // original charge instead of making a second one.
+  const checkoutKey = useMemo(
+    () => (choosing ? `community-sub-checkout-${crypto.randomUUID()}` : null),
+    [choosing],
+  );
+
+  const checkout = useMutation(
+    (planId: string) => portalApi.checkout(communityId, planId, checkoutKey!),
+    {
+      onSuccess: () => {
+        toast('Plan changed', 'success');
+        setChoosing(null);
+        window.location.reload();
+      },
+      onError: (message) => toast('Could not change the plan', 'error', message),
     },
-    onError: (message) => toast('Could not change the plan', 'error', message),
-  });
+  );
 
   const cancel = useMutation(
     (reason: string) => portalApi.cancelSubscription(subscription!.id, reason),
