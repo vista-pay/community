@@ -17,7 +17,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { useMutation } from '@/hooks/use-query';
-import { useCommunityId } from '@/components/providers/session-provider';
+import { useCan, useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { ORG_CATEGORIES } from '@/data/catalog';
@@ -45,6 +45,10 @@ type Tab = 'profile' | 'verification';
 
 export function SettingsClient({ community }: { community: Community }) {
   const communityId = useCommunityId();
+  // Read-only for an officer without write access. The form used to look
+  // editable and only refuse on save, which wasted the typing and read as a
+  // bug rather than a permission.
+  const canEdit = useCan()('community', 'write');
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('profile');
 
@@ -100,13 +104,24 @@ export function SettingsClient({ community }: { community: Community }) {
         title="Settings"
         subtitle="Your community's profile and its standing with Rendi"
         actions={
-          tab === 'profile' ? (
+          tab === 'profile' && canEdit ? (
             <Button loading={save.pending} onClick={() => void save.run()}>
               Save changes
             </Button>
           ) : null
         }
       />
+
+      {!canEdit && tab === 'profile' ? (
+        <Callout
+          tone="info"
+          className="mb-4"
+          title="You can view these details but not change them"
+        >
+          Editing the community profile needs the &apos;write&apos; permission on
+          &apos;community&apos;. An admin of this community can grant it under Staff &amp; roles.
+        </Callout>
+      ) : null}
 
       <Tabs
         value={tab}
@@ -126,7 +141,7 @@ export function SettingsClient({ community }: { community: Community }) {
               {save.error && <Callout tone="danger">{save.error}</Callout>}
 
               <Field label="Name" htmlFor="se-name" required>
-                <Input id="se-name" value={name} onChange={(e) => setName(e.target.value)} />
+                <Input id="se-name" value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -138,7 +153,7 @@ export function SettingsClient({ community }: { community: Community }) {
                   <Input id="se-email" value={community.email} disabled />
                 </Field>
                 <Field label="Phone" htmlFor="se-phone" required>
-                  <Input id="se-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <Input id="se-phone" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!canEdit} />
                 </Field>
               </div>
 
@@ -153,10 +168,10 @@ export function SettingsClient({ community }: { community: Community }) {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="City" htmlFor="se-city" optional>
-                  <Input id="se-city" value={city} onChange={(e) => setCity(e.target.value)} />
+                  <Input id="se-city" value={city} onChange={(e) => setCity(e.target.value)} disabled={!canEdit} />
                 </Field>
                 <Field label="Category" htmlFor="se-cat" optional>
-                  <Select id="se-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <Select id="se-cat" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canEdit}>
                     <option value="">Not set</option>
                     {ORG_CATEGORIES.map((c) => (
                       <option key={c} value={c}>

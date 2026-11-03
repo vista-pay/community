@@ -67,6 +67,27 @@ export function useSession() {
   return ctx;
 }
 
+/**
+ * Whether the active officer may act on a resource.
+ *
+ * Mirrors the API's rule: `*` matches anything, and `write` implies `read`.
+ * A community whose payload predates permissions returns true, so an older
+ * server cannot lock officers out of their own portal — the API remains the
+ * authority either way; this only decides what the UI offers.
+ */
+export function useCan(): (resource: string, action: 'read' | 'write') => boolean {
+  const { community } = useSession();
+  return (resource, action) => {
+    const permissions = community?.permissions;
+    if (!permissions) return true;
+    return permissions.some(
+      (p) =>
+        (p.resource === resource || p.resource === '*') &&
+        (p.action === '*' || p.action === action || (action === 'read' && p.action === 'write')),
+    );
+  };
+}
+
 /** The active community id, or throws — use inside the portal shell only. */
 export function useCommunityId() {
   const { community } = useSession();

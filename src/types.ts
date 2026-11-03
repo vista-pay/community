@@ -26,6 +26,11 @@ export interface CommunitySummary {
   name: string;
   slug: string;
   role: string;
+  /**
+   * What this officer's role may do. `*` matches any resource or action, and
+   * `write` implies `read` — the same rule the API enforces.
+   */
+  permissions?: Array<{ resource: string; action: string }>;
   title: string | null;
   membershipStatus: 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED' | 'LEFT';
   status: CommunityStatus;
