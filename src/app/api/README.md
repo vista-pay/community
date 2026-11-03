@@ -1,6 +1,6 @@
 # Route handlers
 
-The browser never holds a Vista token.
+The browser never holds a Rendi token.
 
 - `POST /api/auth/login` — exchanges credentials with the Nest API and writes
   the access and refresh tokens into HttpOnly cookies. The JSON it returns has

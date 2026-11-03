@@ -3,7 +3,7 @@ import { API_BASE } from '@/lib/constants';
 import { readUpstreamError } from '@/lib/upstream';
 
 /**
- * Creates the Vista account that will own the community.
+ * Creates the Rendi account that will own the community.
  *
  * No session is written here: the API leaves a new user PENDING_VERIFICATION
  * and issues no tokens until the code is confirmed. Writing a cookie now

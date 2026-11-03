@@ -1,5 +1,5 @@
 /**
- * Shapes returned by the Vista API.
+ * Shapes returned by the Rendi API.
  *
  * Money arrives as a decimal *string* and stays a string until it is
  * formatted. Parsing it to a JS number on the way in is how a cooperative's

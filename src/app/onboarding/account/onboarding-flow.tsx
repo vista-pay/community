@@ -26,7 +26,7 @@ const STEPS: Array<{ key: Step; label: string }> = [
 /**
  * Three steps, in the order the API requires them:
  *
- *   1. Create the Vista account        POST /auth/register   (no session yet)
+ *   1. Create the Rendi account        POST /auth/register   (no session yet)
  *   2. Confirm the code                POST /auth/verify-otp (session starts)
  *   3. Register the community          POST /communities     (authenticated)
  *
@@ -164,7 +164,7 @@ function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => v
     <>
       <Header
         icon={<UserPlus className="h-5 w-5" />}
-        title="Create your Vista account"
+        title="Create your Rendi account"
         body="This is the account that will own the community. You will be its first officer."
       />
 
@@ -427,7 +427,7 @@ function CommunityStep({ onCreated }: { onCreated: (name: string) => void }) {
       <Header
         icon={<Building2 className="h-5 w-5" />}
         title="Register your community"
-        body="Vista reviews every registration before a community can collect contributions or appear in discovery."
+        body="Rendi reviews every registration before a community can collect contributions or appear in discovery."
       />
 
       <form className="space-y-5 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
@@ -525,7 +525,7 @@ function CommunityStep({ onCreated }: { onCreated: (name: string) => void }) {
         <Callout tone="info" title="Verification protects members">
           <span className="inline-flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            Collections, payouts, lending and your public listing stay restricted until Vista
+            Collections, payouts, lending and your public listing stay restricted until Rendi
             completes its review. Everything else in the portal works straight away.
           </span>
         </Callout>
@@ -550,7 +550,7 @@ function DoneStep({ name }: { name: string }) {
       </span>
       <h1 className="mt-5 text-2xl font-semibold text-navy-900">Registration submitted</h1>
       <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
-        {name} is pending Vista verification. Open the workspace now to add officers, set up your
+        {name} is pending Rendi verification. Open the workspace now to add officers, set up your
         books and invite members — you can track the verification status from Settings.
       </p>
       <Button

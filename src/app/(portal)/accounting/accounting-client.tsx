@@ -160,7 +160,7 @@ export function AccountingClient({ initial }: { initial: Initial }) {
     <>
       <PageHeader
         title="Accounting"
-        subtitle="The community's own books. Separate from Vista's wallet ledger."
+        subtitle="The community's own books. Separate from Rendi's wallet ledger."
         actions={
           <>
             <Button

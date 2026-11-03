@@ -22,6 +22,7 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { ORG_CATEGORIES } from '@/data/catalog';
 import { date } from '@/lib/format';
+import { uploadImage } from '@/lib/upload';
 
 interface Community {
   id: string;
@@ -53,6 +54,7 @@ export function SettingsClient({ community }: { community: Community }) {
   const [city, setCity] = useState(community.city ?? '');
   const [category, setCategory] = useState(community.category ?? '');
   const [registrationNumber, setRegistrationNumber] = useState(community.registrationNumber ?? '');
+  const [verificationFile, setVerificationFile] = useState<File | null>(null);
 
   const save = useMutation(
     () =>
@@ -70,11 +72,33 @@ export function SettingsClient({ community }: { community: Community }) {
     },
   );
 
+  const submitEvidence = useMutation(
+    async () => {
+      if (!verificationFile) throw new Error('Choose an image or PDF to upload');
+      if (verificationFile.size > 10 * 1024 * 1024) throw new Error('The file must be 10 MB or smaller');
+      const fileUrl = await uploadImage(verificationFile, 'community-documents');
+      return portalApi.addDocument(communityId, {
+        name: community.rejectionReason?.split(':')[0] || verificationFile.name,
+        category: 'FORMS',
+        visibility: 'OFFICERS',
+        fileUrl,
+        sizeBytes: verificationFile.size,
+      });
+    },
+    {
+      onSuccess: () => {
+        setVerificationFile(null);
+        toast('Verification document submitted', 'success', 'Vista administrators can now review it.');
+      },
+      onError: (message) => toast('Could not upload the document', 'error', message),
+    },
+  );
+
   return (
     <>
       <PageHeader
         title="Settings"
-        subtitle="Your community's profile and its standing with Vista"
+        subtitle="Your community's profile and its standing with Rendi"
         actions={
           tab === 'profile' ? (
             <Button loading={save.pending} onClick={() => void save.run()}>
@@ -109,7 +133,7 @@ export function SettingsClient({ community }: { community: Community }) {
                 <Field
                   label="Email"
                   htmlFor="se-email"
-                  hint="Changing this needs Vista support — it identifies the community"
+                  hint="Changing this needs Rendi support — it identifies the community"
                 >
                   <Input id="se-email" value={community.email} disabled />
                 </Field>
@@ -168,7 +192,7 @@ export function SettingsClient({ community }: { community: Community }) {
               </KV>
               <KV label="Listed in Discover">{community.isDiscoverable ? 'Yes' : 'No'}</KV>
               <KV label="Organizer fees">
-                {community.organizerFeesEnabled ? 'Permitted by Vista' : 'Not permitted'}
+                {community.organizerFeesEnabled ? 'Permitted by Rendi' : 'Not permitted'}
               </KV>
               <KV label="Country">{community.country}</KV>
             </dl>
@@ -177,7 +201,7 @@ export function SettingsClient({ community }: { community: Community }) {
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader title="Verification" subtitle="Carried out by Vista, not by the portal" />
+            <CardHeader title="Verification" subtitle="Carried out by Rendi, not by the portal" />
             <div className="px-5 py-5">
               {community.status === 'VERIFIED' ? (
                 <div className="flex items-start gap-3">
@@ -195,7 +219,7 @@ export function SettingsClient({ community }: { community: Community }) {
               ) : community.status === 'REJECTED' ? (
                 <Callout tone="danger" title="Verification was not approved">
                   {community.rejectionReason ??
-                    'Vista did not approve this community. Contact support to find out what is needed.'}
+                    'Rendi did not approve this community. Contact support to find out what is needed.'}
                 </Callout>
               ) : (
                 <div className="flex items-start gap-3">
@@ -205,11 +229,36 @@ export function SettingsClient({ community }: { community: Community }) {
                   <div>
                     <p className="text-sm font-semibold text-navy-900">Verification pending</p>
                     <p className="mt-1 text-[13px] text-slate-600">
-                      A Vista administrator reviews the registration details and the officers named
+                      A Rendi administrator reviews the registration details and the officers named
                       on the account. Until that finishes, the community cannot move money or
                       appear in Discover — everything else in the portal works.
                     </p>
                   </div>
+                </div>
+              )}
+              {community.status !== 'VERIFIED' && (
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-navy-900">
+                    {community.rejectionReason ? 'Document requested by Vista' : 'Submit verification evidence'}
+                  </p>
+                  {community.rejectionReason && (
+                    <p className="mt-1 text-[13px] text-slate-600">{community.rejectionReason}</p>
+                  )}
+                  <input
+                    className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(event) => setVerificationFile(event.target.files?.[0] ?? null)}
+                  />
+                  <Button
+                    className="mt-3"
+                    disabled={!verificationFile}
+                    loading={submitEvidence.pending}
+                    onClick={() => void submitEvidence.run()}
+                  >
+                    Upload for review
+                  </Button>
+                  {submitEvidence.error && <p className="mt-2 text-xs text-red-600">{submitEvidence.error}</p>}
                 </div>
               )}
             </div>
@@ -228,7 +277,7 @@ export function SettingsClient({ community }: { community: Community }) {
               </li>
               <li className="flex gap-2">
                 <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                A public listing in the Vista app
+                A public listing in the Rendi app
               </li>
             </ul>
           </Card>

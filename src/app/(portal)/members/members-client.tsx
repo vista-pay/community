@@ -200,7 +200,7 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
               body={
                 search
                   ? `Nothing matched “${search}”. Try a phone number or part of a name.`
-                  : 'Members appear here once they join from the Vista app or you approve an application.'
+                  : 'Members appear here once they join from the Rendi app or you approve an application.'
               }
             />
           }

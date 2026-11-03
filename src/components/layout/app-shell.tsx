@@ -373,7 +373,7 @@ function VerificationBanner() {
         <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
         <span className="flex-1">
           <strong className="font-semibold">Verification pending.</strong> Collections, payouts,
-          disbursements and your public listing stay restricted until Vista verifies this community.
+          disbursements and your public listing stay restricted until Rendi verifies this community.
         </span>
         <Button size="xs" variant="secondary" onClick={() => router.push('/settings' as Route)}>
           View status

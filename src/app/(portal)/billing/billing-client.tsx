@@ -70,7 +70,7 @@ export function BillingClient({
 
   return (
     <>
-      <PageHeader title="Billing & plan" subtitle="What Vista charges this community" />
+      <PageHeader title="Billing & plan" subtitle="What Rendi charges this community" />
 
       {subscription?.status === 'PAST_DUE' && (
         <Callout tone="danger" className="mb-6" title="Payment is overdue">
@@ -127,7 +127,7 @@ export function BillingClient({
             <EmptyState
               icon={<CreditCard className="h-5 w-5" />}
               title="No plans published"
-              body="Vista has not published subscription plans yet."
+              body="Rendi has not published subscription plans yet."
             />
           </Card>
         ) : (

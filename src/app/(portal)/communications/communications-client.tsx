@@ -76,7 +76,7 @@ export function CommunicationsClient({
               <EmptyState
                 icon={<Megaphone className="h-5 w-5" />}
                 title="No notices posted"
-                body="Members see notices in the Vista app, on the community's page."
+                body="Members see notices in the Rendi app, on the community's page."
               />
             </Card>
           ) : (
@@ -251,7 +251,7 @@ function ComposeModal({
       title={mode === 'announcements' ? 'Post a notice' : 'Send a broadcast'}
       description={
         mode === 'announcements'
-          ? 'Appears on the community board in the Vista app.'
+          ? 'Appears on the community board in the Rendi app.'
           : 'Leaves the platform by SMS or email.'
       }
       footer={

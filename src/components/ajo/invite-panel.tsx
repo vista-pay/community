@@ -35,7 +35,7 @@ interface Invitation {
  *   a meeting, print on a flyer, or hold up as a QR for forty people to scan
  *   at once.
  *
- *   A personal invitation is a token tied to one email, phone or Vista tag,
+ *   A personal invitation is a token tied to one email, phone or Rendi tag,
  *   and it expires. It is what you send to someone who was not in the room.
  *
  * Both are shown with a QR, because the people joining are on phones and
@@ -97,7 +97,7 @@ export function InvitePanel({
               <CopyRow
                 label="Invite code"
                 value={invitationCode}
-                hint="Read this out at a meeting; members enter it in the Vista app."
+                hint="Read this out at a meeting; members enter it in the Rendi app."
                 mono
               />
 
@@ -105,7 +105,7 @@ export function InvitePanel({
                 <CopyRow
                   label="Invite link"
                   value={joinUrl}
-                  hint="Opens the group in the Vista app, ready to join."
+                  hint="Opens the group in the Rendi app, ready to join."
                 />
               )}
 
@@ -254,7 +254,7 @@ function ShareButton({
   url: string | null;
   onCopied: () => void;
 }) {
-  const message = `Join my Ajo group “${groupName}” on Vista.\n\nInvite code: ${code}${
+  const message = `Join my Ajo group “${groupName}” on Rendi.\n\nInvite code: ${code}${
     url ? `\n${url}` : ''
   }`;
 
@@ -349,7 +349,7 @@ function InviteModal({
         {send.error && <Callout tone="danger">{send.error}</Callout>}
 
         <Field
-          label="Email, phone or Vista tag"
+          label="Email, phone or Rendi tag"
           htmlFor="inv-ids"
           required
           hint="One per line, or separated by commas"
@@ -359,7 +359,7 @@ function InviteModal({
             rows={5}
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
-            placeholder={'ada@example.com\n+234 801 234 5678\n@ada.vista'}
+            placeholder={'ada@example.com\n+234 801 234 5678\n@ada.rendi'}
           />
         </Field>
 

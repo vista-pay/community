@@ -249,7 +249,7 @@ function AddStaffModal({
       onClose={onClose}
       size="lg"
       title="Add an officer"
-      description="They need a Vista account with this email address."
+      description="They need a Rendi account with this email address."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

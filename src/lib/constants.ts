@@ -6,7 +6,7 @@
 export const API_BASE = process.env.API_BASE ?? 'http://localhost:9100/api/v1';
 
 /**
- * Confirms the configured API_BASE really is the Vista API.
+ * Confirms the configured API_BASE really is the Rendi API.
  *
  * Worth the one request at boot: when something else owns that port — an S3
  * mock, another service — every call fails with a generic error that reads
@@ -22,16 +22,16 @@ export async function checkApiBase(): Promise<{ ok: boolean; detail: string }> {
 
     const body = await res.json().catch(() => null);
 
-    // Unauthenticated, this endpoint answers 401 in the Vista envelope. Any
+    // Unauthenticated, this endpoint answers 401 in the Rendi envelope. Any
     // other shape means something else is listening.
     if (body && typeof body === 'object' && 'statusCode' in body) {
-      return { ok: true, detail: `Vista API reachable at ${API_BASE}` };
+      return { ok: true, detail: `Rendi API reachable at ${API_BASE}` };
     }
 
     return {
       ok: false,
       detail:
-        `${API_BASE} answered HTTP ${res.status} but not in the Vista format. ` +
+        `${API_BASE} answered HTTP ${res.status} but not in the Rendi format. ` +
         `Something else is listening on that port.`,
     };
   } catch (error) {
@@ -50,7 +50,7 @@ export const APP_NAME = 'Rendi Community Portal';
  * rather than a constant baked into three codebases.
  */
 export const JOIN_LINK_BASE =
-  process.env.NEXT_PUBLIC_JOIN_LINK_BASE ?? 'https://vista.app/j';
+  process.env.NEXT_PUBLIC_JOIN_LINK_BASE ?? 'https://rendi.ng/j';
 
 /** Cookie names. Only the flag is readable by script. */
 export const ACCESS_COOKIE = 'vcp_at';

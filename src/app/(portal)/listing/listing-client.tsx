@@ -155,7 +155,7 @@ export function ListingClient({ initial }: { initial: Listing }) {
     <>
       <PageHeader
         title="Public listing"
-        subtitle="How your community appears to people searching in the Vista app"
+        subtitle="How your community appears to people searching in the Rendi app"
         actions={
           <>
             {listing.status === 'LIVE' && (
@@ -194,7 +194,7 @@ export function ListingClient({ initial }: { initial: Listing }) {
 
       {unverified && (
         <Callout tone="warning" className="mb-6" title="Verification comes first">
-          Only a Vista-verified community can appear in Discover. Your listing can be prepared now
+          Only a Rendi-verified community can appear in Discover. Your listing can be prepared now
           and submitted once verification completes.
         </Callout>
       )}

@@ -1,7 +1,7 @@
 /**
  * Reading an error out of an upstream response.
  *
- * The Vista API always answers with `{ success, statusCode, message }`. When
+ * The Rendi API always answers with `{ success, statusCode, message }`. When
  * the body does not look like that, the request did not reach the API — the
  * usual cause is `API_BASE` pointing at something else on the same port, and
  * the usual symptom is a generic "could not do the thing" that blames the
@@ -10,7 +10,7 @@
 
 export interface UpstreamFailure {
   message: string;
-  /** True when the responder was not the Vista API. */
+  /** True when the responder was not the Rendi API. */
   misrouted: boolean;
 }
 
@@ -30,7 +30,7 @@ export function readUpstreamError(
 ): UpstreamFailure {
   const json = (body ?? {}) as Record<string, unknown>;
 
-  // The Vista shape. `message` is an array when class-validator rejects a DTO.
+  // The Rendi shape. `message` is an array when class-validator rejects a DTO.
   const message = json.message;
   if (typeof message === 'string' && message.trim()) {
     return { message, misrouted: false };
@@ -48,7 +48,7 @@ export function readUpstreamError(
     message:
       `${fallback} The API did not respond as expected (HTTP ${status}` +
       `${foreign ? `: ${foreign}` : ''}). ` +
-      `Check that the Vista API is running and that API_BASE is correct — it is currently ${where}.`,
+      `Check that the Rendi API is running and that API_BASE is correct — it is currently ${where}.`,
     misrouted: true,
   };
 }

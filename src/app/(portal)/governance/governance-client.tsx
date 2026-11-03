@@ -35,6 +35,7 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
+import { uploadImage } from '@/lib/upload';
 import { date, fileSize, humanise, money, relative } from '@/lib/format';
 import { MEETING_KINDS } from '@/data/catalog';
 import type {
@@ -885,6 +886,31 @@ function DocumentsTab({
   const [category, setCategory] = useState('GOVERNANCE');
   const [visibility, setVisibility] = useState('MEMBERS');
   const [fileUrl, setFileUrl] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  /**
+   * Upload straight to storage and drop the resulting URL into the link
+   * field, so the officer can either attach a file or paste a link they
+   * already have. The name field is pre-filled from the filename only when
+   * it is still empty, so it never overwrites something typed.
+   */
+  const onPickFile = async (file: File | null) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const url = await uploadImage(file, 'community-documents');
+      setFileUrl(url);
+      setFileName(file.name);
+      setName((current) => current || file.name.replace(/\.[^.]+$/, ''));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'That file could not be uploaded.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const add = useMutation(
     () =>
@@ -1003,7 +1029,7 @@ function DocumentsTab({
               Cancel
             </Button>
             <Button
-              disabled={name.trim().length < 2 || !fileUrl.trim()}
+              disabled={name.trim().length < 2 || !fileUrl.trim() || uploading}
               loading={add.pending}
               onClick={() => void add.run()}
             >
@@ -1022,11 +1048,32 @@ function DocumentsTab({
               placeholder="Bye-laws (2026 revision)"
             />
           </Field>
+          <Field label="File" htmlFor="doc-file">
+            <input
+              id="doc-file"
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp"
+              disabled={uploading}
+              onChange={(e) => void onPickFile(e.target.files?.[0] ?? null)}
+              className="block w-full cursor-pointer rounded-xl border border-slate-200 p-2 text-sm file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium disabled:opacity-60"
+            />
+            {uploadError ? (
+              <p className="mt-1 text-xs text-red-600">{uploadError}</p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">
+                {uploading
+                  ? 'Uploading…'
+                  : fileName
+                    ? `${fileName} uploaded — it fills the link below.`
+                    : 'Upload the file, or paste a link to it below.'}
+              </p>
+            )}
+          </Field>
           <Field
             label="Link"
             htmlFor="doc-url"
             required
-            hint="A link to the file in your storage. Uploading from here is not wired up yet."
+            hint="Filled in automatically when you upload a file."
           >
             <Input
               id="doc-url"
