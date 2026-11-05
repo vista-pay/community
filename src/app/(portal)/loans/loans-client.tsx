@@ -26,6 +26,7 @@ import {
 import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
@@ -105,12 +106,13 @@ export function LoansClient({
     },
   );
 
-  const disburse = useMutation((loanId: string) => portalApi.disburseLoan(loanId), {
-    onSuccess: async () => {
-      toast('Loan disbursed', 'success', 'The money has left the group pool.');
-      await refreshLoans();
-    },
-    onError: (message) => toast('Could not disburse', 'error', message),
+  // Disbursing takes money out of the community, so it goes through the owner
+  // approval gate rather than straight to the API. The gate makes the first
+  // call itself and only prompts if the server asks for a code.
+  const disburse = useMoneyOutOtp<string>({
+    perform: (extra, loanId) => portalApi.disburseLoan(loanId, extra),
+    onDone: refreshLoans,
+    successMessage: 'Loan disbursed — the money has left the pool',
   });
 
   return (
@@ -339,6 +341,8 @@ export function LoansClient({
           )
         }
       />
+      {/* One dialog per screen; the gate decides when it opens. */}
+      <MoneyOutOtpDialog gate={disburse} />
     </>
   );
 }

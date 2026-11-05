@@ -83,6 +83,7 @@ export const NAV_SECTIONS = [
       { href: '/savings', label: 'Savings', icon: 'PiggyBank' },
       { href: '/loans', label: 'Loans', icon: 'HandCoins' },
       { href: '/accounting', label: 'Accounting', icon: 'BookOpen' },
+      { href: '/trial-balance', label: 'Trial balance', icon: 'Scale' },
       { href: '/reports', label: 'Reports', icon: 'BarChart3' },
     ],
   },

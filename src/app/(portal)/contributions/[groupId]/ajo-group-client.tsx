@@ -117,16 +117,6 @@ export function AjoGroupClient({
     }
   };
 
-  const rejectPayout = (payoutId: string) => {
-    const reason = window.prompt('Reason for rejecting this payout (recorded on the audit trail):');
-    if (reason === null) return;
-    void runPayoutAction(
-      `reject-${payoutId}`,
-      () => portalApi.approvePayout(payoutId, false, reason.trim() || undefined),
-      'Payout rejected',
-    );
-  };
-
   const remind = useMutation(() => portalApi.sendReminders(cycleId!), {
     onSuccess: (result) =>
       // The server caps reminders per member per day, so the message may say
@@ -386,7 +376,9 @@ export function AjoGroupClient({
                                   : 'slate'
                           }
                         >
-                          {humanise(payout?.status ?? p.status)}
+                          {payout?.status === 'PENDING_APPROVAL'
+                            ? 'Automatic payout queued'
+                            : humanise(payout?.status ?? p.status)}
                         </Badge>
                         {payout?.failureReason ? (
                           <p className="mt-1 text-xs text-red-600">{payout.failureReason}</p>
@@ -403,29 +395,20 @@ export function AjoGroupClient({
                     const payout = payoutByPosition.get(p.position);
                     if (payout?.status === 'PENDING_APPROVAL') {
                       return (
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            loading={payoutActing === `reject-${payout.id}`}
-                            onClick={() => rejectPayout(payout.id)}
-                          >
-                            Reject
-                          </Button>
-                          <Button
-                            size="sm"
-                            loading={payoutActing === `approve-${payout.id}`}
-                            onClick={() =>
-                              void runPayoutAction(
-                                `approve-${payout.id}`,
-                                () => portalApi.approvePayout(payout.id, true),
-                                'Payout approved — pool settled to the recipient',
-                              )
-                            }
-                          >
-                            Approve &amp; pay
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={payoutActing === `retry-${p.id}`}
+                          onClick={() =>
+                            void runPayoutAction(
+                              `retry-${p.id}`,
+                              () => portalApi.requestPayout(p.id),
+                              'Automatic payout processed',
+                            )
+                          }
+                        >
+                          Retry automatic payout
+                        </Button>
                       );
                     }
                     // A dead payout (rejected or reversed) frees the turn to be
@@ -443,7 +426,7 @@ export function AjoGroupClient({
                           void runPayoutAction(
                             `request-${p.id}`,
                             () => portalApi.requestPayout(p.id),
-                            'Payout requested — another organizer must approve it',
+                            'Automatic payout processed',
                           )
                         }
                       >

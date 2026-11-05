@@ -9,6 +9,7 @@
  * cannot quietly point at the wrong community.
  */
 import { del, get, patch, post } from '@/lib/api';
+import type { MoneyOutExtra } from '@/components/money-out-otp';
 import type {
   AccountLedger,
   AccountingPeriod,
@@ -22,6 +23,7 @@ import type {
   BudgetLine,
   CashAccount,
   CommunityDocument,
+  CommunityPolicy,
   ContributionBoard,
   DashboardData,
   WalletData,
@@ -54,8 +56,18 @@ import type {
   ServiceCatalogItem,
   ServiceRequest,
   Statements,
+  StaffInvitation,
   Subscription,
   SubscriptionPlan,
+  MerchantApiKey,
+  MerchantApiKeyCreated,
+  MerchantInvoice,
+  MerchantInvoiceDetail,
+  MerchantOverview,
+  MerchantPaymentLink,
+  MerchantSettlementAccount,
+  MerchantWebhook,
+  MerchantWebhookCreated,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -64,6 +76,10 @@ const path = (communityId: string, suffix = '') => `/communities/${communityId}$
 
 export const portalApi = {
   dashboard: (communityId: string) => get<DashboardData>(path(communityId, '/dashboard')),
+  navigationBadges: (communityId: string) =>
+    get<NonNullable<DashboardData['navigationCounts']>>(path(communityId, '/navigation/badges')),
+  markNavigationRead: (communityId: string, section: string) =>
+    post<{ read: true }>(path(communityId, `/navigation/${section}/read`)),
   wallet: (communityId: string) => get<WalletData>(path(communityId, '/wallet')),
 
   auditLogs: (communityId: string, page = 1, limit = 50) =>
@@ -71,8 +87,8 @@ export const portalApi = {
 
   // ───────────────────────────── Members ─────────────────────────────
 
-  members: (communityId: string, search?: string) =>
-    get<MemberRow[]>(path(communityId, '/members'), { search }),
+  members: (communityId: string, search?: string, includeOwner = false) =>
+    get<MemberRow[]>(path(communityId, '/members'), { search, includeOwner }),
 
   member: (communityId: string, memberId: string) =>
     get<MemberDetail>(path(communityId, `/members/${memberId}`)),
@@ -80,7 +96,13 @@ export const portalApi = {
   addStaff: (
     communityId: string,
     body: { userId?: string; email?: string; roleName: string; title?: string },
-  ) => post<unknown>(path(communityId, '/staff'), body),
+  ) => post<{ kind: 'MEMBER' | 'INVITATION' }>(path(communityId, '/staff'), body),
+
+  staffInvitations: (communityId: string) =>
+    get<StaffInvitation[]>(path(communityId, '/staff/invitations')),
+
+  revokeStaffInvitation: (communityId: string, invitationId: string) =>
+    del<unknown>(path(communityId, `/staff/invitations/${invitationId}`)),
 
   removeStaff: (communityId: string, memberId: string) =>
     del<unknown>(path(communityId, `/staff/${memberId}`)),
@@ -131,8 +153,12 @@ export const portalApi = {
     get<WelfareRequestRow[]>(path(communityId, '/welfare'), status ? { status } : undefined),
   welfareRequest: (requestId: string) =>
     get<WelfareRequestDetail>(`/welfare-requests/${requestId}`),
-  reviewWelfare: (requestId: string, body: { status: string; note?: string }) =>
-    patch<unknown>(`/welfare-requests/${requestId}`, body),
+  reviewWelfare: (
+    requestId: string,
+    body: { status: string; note?: string },
+    // Only the PAID step moves money; the API asks for a code just for that.
+    extra: MoneyOutExtra = {},
+  ) => patch<unknown>(`/welfare-requests/${requestId}`, { ...body, ...extra }),
   replyWelfare: (requestId: string, body: { text?: string; attachmentUrl?: string }) =>
     post<unknown>(`/welfare-requests/${requestId}/messages`, body),
 
@@ -297,10 +323,14 @@ export const portalApi = {
     requestId: string,
     approve: boolean,
     note?: string,
+    // Approving releases community money, so the request carries the owner's
+    // approval code. Omitted on the first call — the API answers 428 with a
+    // challenge, and useMoneyOutOtp re-sends this with the code.
+    extra: MoneyOutExtra = {},
   ) =>
     patch<{ id: string; status: string }>(
       `/communities/${communityId}/savings/withdrawal-requests/${requestId}`,
-      { approve, note },
+      { approve, note, ...extra },
     ),
 
   savingsProducts: (communityId: string) =>
@@ -363,8 +393,8 @@ export const portalApi = {
       confirm,
     }),
 
-  disburseLoan: (loanId: string) =>
-    post<Loan>(`/ajo-loans/${loanId}/disburse`, undefined, {
+  disburseLoan: (loanId: string, extra: MoneyOutExtra = {}) =>
+    post<Loan>(`/ajo-loans/${loanId}/disburse`, extra, {
       headers: {
         'Idempotency-Key': `ajo-loan-disbursement-${loanId}`,
       },
@@ -424,13 +454,6 @@ export const portalApi = {
     post<AjoPayoutRow>(`/ajo-payouts/positions/${positionId}/request`, undefined, {
       headers: { 'Idempotency-Key': `ajo-payout-request-${crypto.randomUUID()}` },
     }),
-
-  approvePayout: (payoutId: string, approve: boolean, reason?: string) =>
-    post<AjoPayoutRow>(
-      `/ajo-payouts/${payoutId}/approve`,
-      { approve, reason },
-      { headers: { 'Idempotency-Key': `ajo-payout-approval-${crypto.randomUUID()}` } },
-    ),
 
   groupEarnings: (groupId: string) => get<unknown>(`/ajo-groups/${groupId}/earnings`),
 
@@ -493,6 +516,106 @@ export const portalApi = {
   markNotificationRead: (id: string) => patch<unknown>(`/notifications/${id}/read`),
   markAllNotificationsRead: () => patch<unknown>('/notifications/read-all'),
 
+  // ───────────────────────────── Merchant ─────────────────────────────
+
+  merchantOverview: (communityId: string) =>
+    get<MerchantOverview>(path(communityId, '/merchant/overview')),
+
+  settlementAccounts: (communityId: string) =>
+    get<MerchantSettlementAccount[]>(path(communityId, '/merchant/settlement-accounts')),
+
+  addSettlementAccount: (
+    communityId: string,
+    body: {
+      bankName: string;
+      bankCode: string;
+      accountNumber: string;
+      accountName: string;
+      isDefault?: boolean;
+    },
+  ) =>
+    post<MerchantSettlementAccount>(path(communityId, '/merchant/settlement-accounts'), body),
+
+  makeSettlementAccountDefault: (communityId: string, accountId: string) =>
+    patch<MerchantSettlementAccount>(
+      path(communityId, `/merchant/settlement-accounts/${accountId}/default`),
+    ),
+
+  removeSettlementAccount: (communityId: string, accountId: string) =>
+    del<unknown>(path(communityId, `/merchant/settlement-accounts/${accountId}`)),
+
+  merchantPaymentLinks: (communityId: string) =>
+    get<MerchantPaymentLink[]>(path(communityId, '/merchant/payment-links')),
+
+  createMerchantPaymentLink: (
+    communityId: string,
+    body: {
+      title: string;
+      description?: string;
+      amount?: string;
+      currencyCode: string;
+      isFixedAmount?: boolean;
+      maxUses?: number;
+    },
+  ) => post<MerchantPaymentLink>(path(communityId, '/merchant/payment-links'), body),
+
+  updateMerchantPaymentLink: (
+    communityId: string,
+    linkId: string,
+    body: { title?: string; description?: string; isActive?: boolean; amount?: string },
+  ) => patch<unknown>(path(communityId, `/merchant/payment-links/${linkId}`), body),
+
+  deleteMerchantPaymentLink: (communityId: string, linkId: string) =>
+    del<unknown>(path(communityId, `/merchant/payment-links/${linkId}`)),
+
+  merchantInvoices: (communityId: string) =>
+    get<MerchantInvoice[]>(path(communityId, '/merchant/invoices')),
+
+  createMerchantInvoice: (
+    communityId: string,
+    body: {
+      customerName: string;
+      customerEmail: string;
+      currencyCode: string;
+      dueDate: string;
+      items: Array<{ description: string; quantity: number; unitPrice: string }>;
+    },
+  ) => post<MerchantInvoice>(path(communityId, '/merchant/invoices'), body),
+
+  merchantInvoice: (communityId: string, invoiceId: string) =>
+    get<MerchantInvoiceDetail>(path(communityId, `/merchant/invoices/${invoiceId}`)),
+
+  issueMerchantInvoice: (communityId: string, invoiceId: string) =>
+    post<{ invoiceId: string; status: string; paymentUrl: string }>(
+      path(communityId, `/merchant/invoices/${invoiceId}/issue`),
+      {},
+    ),
+
+  merchantApiKeys: (communityId: string) =>
+    get<MerchantApiKey[]>(path(communityId, '/merchant/api-keys')),
+
+  createMerchantApiKey: (communityId: string, body: { name: string; permissions?: string[] }) =>
+    post<MerchantApiKeyCreated>(path(communityId, '/merchant/api-keys'), body),
+
+  revokeMerchantApiKey: (communityId: string, keyId: string) =>
+    del<unknown>(path(communityId, `/merchant/api-keys/${keyId}`)),
+
+  merchantWebhooks: (communityId: string) =>
+    get<MerchantWebhook[]>(path(communityId, '/merchant/webhooks')),
+
+  createMerchantWebhook: (communityId: string, body: { url: string; events: string[] }) =>
+    post<MerchantWebhookCreated>(path(communityId, '/merchant/webhooks'), body),
+
+  removeMerchantWebhook: (communityId: string, endpointId: string) =>
+    del<unknown>(path(communityId, `/merchant/webhooks/${endpointId}`)),
+
   updateCommunity: (communityId: string, body: Record<string, unknown>) =>
     patch<unknown>(path(communityId), body),
+
+  policies: (communityId: string) => get<CommunityPolicy[]>(path(communityId, '/service-policies')),
+
+  updatePolicy: (
+    communityId: string,
+    body: Pick<CommunityPolicy, 'area' | 'content' | 'rules' | 'isPublished'>,
+  ) => patch<CommunityPolicy>(path(communityId, '/service-policies'), body),
 };

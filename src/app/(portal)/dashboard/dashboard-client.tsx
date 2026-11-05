@@ -3,11 +3,16 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
+  Bell,
   CalendarDays,
   HandCoins,
+  HeartHandshake,
+  PiggyBank,
   Receipt,
+  Sparkles,
   TrendingUp,
   UserPlus,
   Users,
@@ -19,6 +24,7 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { portalApi } from '@/services/portal';
 import { date, humanise, money, relative } from '@/lib/format';
 import { isZeroMoney } from '@/lib/money';
+import { Bars, C } from '@/components/charts/Charts';
 import type { DashboardData } from '@/types';
 
 export function DashboardClient({ initial }: { initial: DashboardData }) {
@@ -32,6 +38,23 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
   // their order is arbitrary, so index 0 was sometimes AUD.
   const wallet =
     d.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ?? d.wallet?.accounts[0];
+  const metrics = d.metrics ?? {
+    activityLast7Days: d.recentActivity.length,
+    newMembersLast30Days: 0,
+    activeSavingsAccounts: 0,
+    activeOpportunities: 0,
+    activeWelfareRequests: 0,
+    unreadNotifications: 0,
+  };
+  const activitySeries = d.activitySeries ?? [];
+  const attentionCount =
+    d.navigationCounts?.dashboard ??
+    (d.actions.pendingApplications +
+      d.actions.loansAwaitingReview +
+      d.actions.expensesAwaitingApproval +
+      d.actions.unpaidFines +
+      d.ajo.obligationsOutstanding +
+      d.lending.defaulted);
 
   return (
     <>
@@ -92,11 +115,83 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
         />
       </div>
 
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.85fr)]">
+        <Card>
+          <CardHeader
+            title="Application activity"
+            subtitle={`${metrics.activityLast7Days} recorded action${metrics.activityLast7Days === 1 ? '' : 's'} in the last 7 days`}
+          />
+          <div className="px-3 pb-4 pt-2 sm:px-5">
+            <Bars
+              data={activitySeries}
+              x="label"
+              height={270}
+              currency={false}
+              stacked
+              series={[
+                { key: 'members', name: 'Members', color: C.green },
+                { key: 'finance', name: 'Finance', color: C.navy },
+                { key: 'governance', name: 'Governance', color: C.gold },
+                { key: 'other', name: 'Other', color: C.slate },
+              ]}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Community pulse" subtitle="Current activity across the workspace" />
+          <div className="grid grid-cols-2 gap-px bg-slate-100">
+            <PulseMetric
+              icon={UserPlus}
+              label="New members"
+              value={metrics.newMembersLast30Days}
+              hint="Last 30 days"
+              href="/members"
+            />
+            <PulseMetric
+              icon={PiggyBank}
+              label="Savings accounts"
+              value={metrics.activeSavingsAccounts}
+              hint="Active"
+              href="/savings"
+            />
+            <PulseMetric
+              icon={Sparkles}
+              label="Opportunities"
+              value={metrics.activeOpportunities}
+              hint="Published"
+              href="/opportunities"
+            />
+            <PulseMetric
+              icon={HeartHandshake}
+              label="Welfare requests"
+              value={metrics.activeWelfareRequests}
+              hint="Still open"
+              href="/welfare"
+            />
+            <PulseMetric
+              icon={Activity}
+              label="Activity"
+              value={metrics.activityLast7Days}
+              hint="Last 7 days"
+              href="/reports"
+            />
+            <PulseMetric
+              icon={Bell}
+              label="Notifications"
+              value={metrics.unreadNotifications}
+              hint="Unread"
+              href="/notifications"
+            />
+          </div>
+        </Card>
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
             title="Needs your attention"
-            subtitle="Everything here is waiting on an officer"
+            subtitle={`${attentionCount} item${attentionCount === 1 ? '' : 's'} need follow-up from an officer`}
           />
           <ActionList data={d} />
         </Card>
@@ -166,11 +261,40 @@ function ActionList({ data }: { data: DashboardData }) {
       href: '/members/requests' as Route,
     },
     {
+      key: 'contributions',
+      count:
+        data.actions.contributionObligationsOutstanding ?? data.ajo.obligationsOutstanding,
+      icon: TrendingUp,
+      label: `Contribution obligation${(data.actions.contributionObligationsOutstanding ?? data.ajo.obligationsOutstanding) === 1 ? '' : 's'} overdue or unpaid`,
+      href: '/contributions' as Route,
+    },
+    {
+      key: 'savings',
+      count: data.actions.savingsWithdrawalsAwaitingReview ?? 0,
+      icon: PiggyBank,
+      label: 'Savings withdrawal requests awaiting review',
+      href: '/savings' as Route,
+    },
+    {
       key: 'loans',
       count: data.actions.loansAwaitingReview,
       icon: HandCoins,
       label: 'Loan applications awaiting a decision',
       href: '/loans' as Route,
+    },
+    {
+      key: 'defaulted-loans',
+      count: data.actions.defaultedLoans ?? data.lending.defaulted,
+      icon: AlertTriangle,
+      label: 'Defaulted loans requiring follow-up',
+      href: '/loans' as Route,
+    },
+    {
+      key: 'welfare',
+      count: data.actions.welfareRequestsAwaitingAction ?? 0,
+      icon: HeartHandshake,
+      label: 'Welfare requests awaiting review or disbursement',
+      href: '/welfare' as Route,
     },
     {
       key: 'expenses',
@@ -193,7 +317,7 @@ function ActionList({ data }: { data: DashboardData }) {
       <EmptyState
         compact
         title="Nothing waiting"
-        body="No applications, loan decisions, expense approvals or unpaid fines."
+        body="No join requests, overdue contributions, withdrawal reviews, welfare decisions, loan follow-ups, expense approvals or unpaid fines."
       />
     );
   }
@@ -218,5 +342,30 @@ function ActionList({ data }: { data: DashboardData }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function PulseMetric({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  href,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: number;
+  hint: string;
+  href: Route;
+}) {
+  return (
+    <Link href={href} className="bg-white px-4 py-4 transition hover:bg-slate-50">
+      <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
+        <Icon className="h-4 w-4 text-brand-600" />
+        {label}
+      </span>
+      <span className="tnum mt-2 block text-2xl font-bold text-navy-900">{value}</span>
+      <span className="mt-0.5 block text-[11px] text-slate-400">{hint}</span>
+    </Link>
   );
 }

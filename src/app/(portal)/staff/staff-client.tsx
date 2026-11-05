@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ShieldCheck, UserCog, UserPlus } from 'lucide-react';
+import { Mail, ShieldCheck, UserCog, UserPlus } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -25,7 +25,7 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { ASSIGNABLE_ROLES, roleName } from '@/data/catalog';
 import { date, humanise, relative } from '@/lib/format';
-import type { AuditEntry, MemberRow } from '@/types';
+import type { AuditEntry, MemberRow, StaffInvitation } from '@/types';
 
 type Tab = 'staff' | 'audit';
 
@@ -43,12 +43,16 @@ export function StaffClient({
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<MemberRow | null>(null);
 
-  const members = useQuery(() => portalApi.members(communityId), [communityId], {
+  const members = useQuery(() => portalApi.members(communityId, undefined, true), [communityId], {
     initial: initialMembers,
   });
   const audit = useQuery(() => portalApi.auditLogs(communityId), [communityId], {
     initial: initialAudit,
   });
+  const invitations = useQuery<StaffInvitation[]>(
+    () => portalApi.staffInvitations(communityId),
+    [communityId],
+  );
 
   const staff = (members.data ?? []).filter(
     (m) => m.role !== 'COMMUNITY_MEMBER' && m.status === 'ACTIVE',
@@ -62,6 +66,16 @@ export function StaffClient({
     },
     onError: (message) => toast('Could not remove access', 'error', message),
   });
+  const revoke = useMutation(
+    (invitationId: string) => portalApi.revokeStaffInvitation(communityId, invitationId),
+    {
+      onSuccess: async () => {
+        toast('Invitation cancelled', 'info');
+        await invitations.refresh();
+      },
+      onError: (message) => toast('Could not cancel invitation', 'error', message),
+    },
+  );
 
   return (
     <>
@@ -86,7 +100,60 @@ export function StaffClient({
       />
 
       {tab === 'staff' ? (
-        <Card>
+        <div className="space-y-4">
+          {(invitations.data?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader
+                title="Pending invitations"
+                subtitle="Officer access activates after the invitee creates and verifies their Rendi account"
+              />
+              <DataTable
+                rows={invitations.data ?? []}
+                rowKey={(invitation) => invitation.id}
+                loading={invitations.loading}
+                columns={[
+                  {
+                    key: 'email',
+                    header: 'Invitee',
+                    cell: (invitation) => (
+                      <span className="flex items-center gap-2.5">
+                        <Mail className="h-4 w-4 text-slate-400" />
+                        <span>
+                          <span className="block font-medium text-navy-900">{invitation.email}</span>
+                          <span className="block text-xs text-slate-500">
+                            Expires {date(invitation.expiresAt)}
+                          </span>
+                        </span>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'role',
+                    header: 'Role',
+                    cell: (invitation) => (
+                      <Badge tone="amber">{invitation.title ?? roleName(invitation.role.name)}</Badge>
+                    ),
+                  },
+                  {
+                    key: 'action',
+                    header: '',
+                    align: 'right',
+                    cell: (invitation) => (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        loading={revoke.pending}
+                        onClick={() => void revoke.run(invitation.id)}
+                      >
+                        Cancel invitation
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          )}
+          <Card>
           <DataTable
             rows={staff}
             rowKey={(m) => m.id}
@@ -140,7 +207,8 @@ export function StaffClient({
               />
             }
           />
-        </Card>
+          </Card>
+        </div>
       ) : (
         <Card>
           <CardHeader
@@ -183,6 +251,7 @@ export function StaffClient({
         communityId={communityId}
         members={members.data ?? []}
         onAdded={members.refresh}
+        onInvited={invitations.refresh}
       />
 
       <ConfirmDialog
@@ -210,12 +279,14 @@ function AddStaffModal({
   communityId,
   members,
   onAdded,
+  onInvited,
 }: {
   open: boolean;
   onClose: () => void;
   communityId: string;
   members: MemberRow[];
   onAdded: () => Promise<void>;
+  onInvited: () => Promise<void>;
 }) {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
@@ -230,12 +301,18 @@ function AddStaffModal({
         title: title.trim() || undefined,
       }),
     {
-      onSuccess: async () => {
-        toast('Officer added', 'success');
+      onSuccess: async (result) => {
+        toast(
+          result.kind === 'INVITATION' ? 'Invitation sent' : 'Officer added',
+          'success',
+          result.kind === 'INVITATION'
+            ? 'Their access will activate after they create and verify their Rendi account.'
+            : undefined,
+        );
         setEmail('');
         setTitle('');
         onClose();
-        await onAdded();
+        await Promise.all([onAdded(), onInvited()]);
       },
       onError: (message) => toast('Could not add them', 'error', message),
     },
@@ -249,7 +326,7 @@ function AddStaffModal({
       onClose={onClose}
       size="lg"
       title="Add an officer"
-      description="They need a Rendi account with this email address."
+      description="Existing users are added immediately. Everyone else receives a pending invitation."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -260,7 +337,7 @@ function AddStaffModal({
             loading={add.pending}
             onClick={() => void add.run()}
           >
-            Add officer
+            Add or invite officer
           </Button>
         </>
       }

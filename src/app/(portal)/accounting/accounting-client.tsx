@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   BookOpen,
@@ -46,6 +47,8 @@ import type {
 import { JournalModal } from './journal-modal';
 import { ExpenseModal } from './expense-modal';
 import { ReconcileModal } from './reconcile-modal';
+import { ModuleAccounting } from '@/components/accounting/module-accounting';
+import { ProfitAndLoss } from '@/components/accounting/profit-and-loss';
 
 type Tab = 'journals' | 'chart' | 'statements' | 'banking' | 'expenses' | 'periods';
 
@@ -203,6 +206,9 @@ export function AccountingClient({ initial }: { initial: Initial }) {
           tone={s.trialBalance.balanced ? 'positive' : 'danger'}
         />
       </div>
+
+      <ModuleAccounting modules={s.modules ?? []} />
+      <ProfitAndLoss data={s.profitAndLoss} />
 
       <Tabs
         className="mt-6"
@@ -552,24 +558,19 @@ function StatementsTab({ statements }: { statements: Statements }) {
       </div>
 
       <Card>
-        <CardHeader title="Trial balance" subtitle="Every account with a movement" />
-        <DataTable
-          rows={statements.rows.filter((r) => !isZeroMoney(r.debit) || !isZeroMoney(r.credit))}
-          rowKey={(r) => r.id}
-          columns={[
-            { key: 'code', header: 'Code', cell: (r) => <span className="tnum">{r.code}</span> },
-            { key: 'name', header: 'Account', cell: (r) => r.name },
-            {
-              key: 'type',
-              header: 'Type',
-              hideOnMobile: true,
-              cell: (r) => <Badge tone="slate">{ACCOUNT_TYPE_LABELS[r.type]}</Badge>,
-            },
-            { key: 'debit', header: 'Debit', align: 'right', cell: (r) => money(r.debit) },
-            { key: 'credit', header: 'Credit', align: 'right', cell: (r) => money(r.credit) },
-          ]}
-          empty={<EmptyState compact title="Nothing posted yet" body="The trial balance fills in as entries post." />}
-        />
+        <CardHeader title="Trial balance" subtitle="Now available as a dedicated finance workspace" />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <p className="max-w-2xl text-[13px] leading-5 text-slate-600">
+            Review account-level debits and credits, filter by period or account type, investigate
+            imbalances and export the complete schedule from the Trial balance page.
+          </p>
+          <Link
+            href="/trial-balance"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-navy-900 px-4 text-sm font-semibold text-white transition hover:bg-navy-800 focus-ring"
+          >
+            Open trial balance
+          </Link>
+        </div>
       </Card>
     </div>
   );

@@ -101,6 +101,51 @@ export interface DashboardData {
     expensesAwaitingApproval: number;
     unpaidFines: number;
     unpaidFinesValue: Money;
+    savingsWithdrawalsAwaitingReview?: number;
+    welfareRequestsAwaitingAction?: number;
+    contributionObligationsOutstanding?: number;
+    defaultedLoans?: number;
+  };
+  metrics?: {
+    activityLast7Days: number;
+    newMembersLast30Days: number;
+    activeSavingsAccounts: number;
+    activeOpportunities: number;
+    activeWelfareRequests: number;
+    unreadNotifications: number;
+  };
+  activitySeries?: Array<{
+    date: string;
+    label: string;
+    members: number;
+    finance: number;
+    governance: number;
+    other: number;
+  }>;
+  navigationCounts?: {
+    dashboard: number;
+    members: number;
+    joinRequests: number;
+    contributions: number;
+    savings: number;
+    loans: number;
+    welfare: number;
+    opportunities: number;
+    wallet: number;
+    accounting: number;
+    trialBalance: number;
+    reports: number;
+    governance: number;
+    communications: number;
+    listing: number;
+    staff: number;
+    billing: number;
+    settings: number;
+    merchant: number;
+    merchantPaymentLinks: number;
+    merchantInvoices: number;
+    merchantApiKeys: number;
+    merchantWebhooks: number;
   };
   upcomingMeeting: { id: string; title: string; scheduledFor: IsoDate; venue: string } | null;
   subscription: { id: string; plan: string; status: string; renewsAt: IsoDate | null } | null;
@@ -136,6 +181,20 @@ export interface MemberRow {
   loanBalance: Money;
   unpaidFines: number;
   ajoGroupIds: string[];
+}
+
+export interface StaffInvitation {
+  id: string;
+  email: string;
+  title: string | null;
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+  expiresAt: IsoDate;
+  createdAt: IsoDate;
+  role: { name: string };
+  invitedBy: {
+    email: string;
+    profile: { firstName: string; lastName: string } | null;
+  };
 }
 
 export interface MemberDetail {
@@ -347,6 +406,42 @@ export interface Statements {
     credit: Money;
     balance: Money;
   }>;
+  modules: Array<{
+    key: 'contributions' | 'savings' | 'loans' | 'welfare' | 'opportunities';
+    label: string;
+    accountCodes: string[];
+    debit: Money;
+    credit: Money;
+    balance: Money;
+    operational: Array<{
+      label: string;
+      value: string;
+      kind: 'money' | 'count';
+    }>;
+  }>;
+  profitAndLoss: {
+    status: 'PROFIT' | 'LOSS' | 'BREAK_EVEN';
+    bookIncome: Money;
+    settledFeeIncome: Money;
+    pendingFeeIncome: Money;
+    totalIncome: Money;
+    totalExpense: Money;
+    netResult: Money;
+    marginPercent: string;
+    incomeSources: Array<{
+      key: string;
+      label: string;
+      accountCode: string;
+      amount: Money;
+      source: 'BOOKS' | 'SETTLED_FEES';
+    }>;
+    expenseSources: Array<{
+      key: string;
+      label: string;
+      accountCode: string;
+      amount: Money;
+    }>;
+  };
   trialBalance: { debit: Money; credit: Money; balanced: boolean };
   incomeStatement: { income: Money; expense: Money; surplus: Money };
   balanceSheet: { assets: Money; liabilities: Money; equity: Money; surplus: Money };
@@ -401,6 +496,23 @@ export interface AccountingPeriod {
   label: string;
   status: 'OPEN' | 'CLOSED';
   closedAt: IsoDate | null;
+}
+
+export type CommunityPolicyArea =
+  | 'JOINING'
+  | 'CONTRIBUTIONS'
+  | 'SAVINGS'
+  | 'LOANS'
+  | 'WELFARE'
+  | 'OPPORTUNITIES';
+
+export interface CommunityPolicy {
+  area: CommunityPolicyArea;
+  content: string;
+  rules: Record<string, string | number | boolean>;
+  isPublished: boolean;
+  version: number;
+  updatedAt: IsoDate | null;
 }
 
 export interface AccountLedger {
@@ -874,7 +986,13 @@ export interface NotificationItem {
 
 // ───────────────────────────── Welfare ─────────────────────────────
 
-export type WelfareStatus = 'SUBMITTED' | 'INFO_REQUESTED' | 'APPROVED' | 'REJECTED' | 'PAID';
+export type WelfareStatus =
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'INFO_REQUESTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAID';
 
 export interface WelfareRequestRow {
   id: string;
@@ -984,4 +1102,140 @@ export interface LoanApplicationDetail extends Omit<Loan, 'borrower'> {
     status: 'PENDING' | 'CONFIRMED' | 'DECLINED';
   }[];
   schedule: { number: number; amount: Money; dueDate: IsoDate; status: 'PAID' | 'SCHEDULED' }[];
+}
+
+// ───────────────────────────── Merchant ─────────────────────────────
+//
+// A community is a merchant account, not a consumer one: it collects from
+// members and the public, holds its own settlement accounts, and is registered
+// as a merchant entity at the payment provider. These types mirror the
+// `/communities/:id/merchant/*` endpoints, which share their implementation
+// with the business merchant API.
+
+export interface MerchantSettlementAccount {
+  id: string;
+  bankName: string;
+  bankCode: string;
+  accountNumber: string;
+  accountName: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface MerchantOverview {
+  community: {
+    id: string;
+    name: string;
+    email: string;
+    status: CommunitySummary['status'];
+    registrationNumber: string | null;
+  };
+  merchant: {
+    /**
+     * How the wallet is classified. BUSINESS and COMMUNITY are the merchant
+     * kinds. There is no separate provider-side merchant entity: a merchant
+     * is an ordinary provider customer whose dedicated account carries the
+     * organisation's own name, exactly as a business works.
+     */
+    accountType: 'PERSONAL' | 'BUSINESS' | 'COMMUNITY' | 'AJO' | null;
+    isMerchant: boolean;
+    canCollect: boolean;
+  };
+  walletNumber: string | null;
+  /**
+   * The account members transfer into. Its ten digits come from the partner
+   * bank, not from Rendi — only the wallet and ledger numbers are ours.
+   */
+  collectionAccount: {
+    accountNumber: string;
+    bankName: string;
+    accountName: string;
+    isTestAccount: boolean;
+  } | null;
+  defaultSettlementAccount: MerchantSettlementAccount | null;
+  settlementAccounts: MerchantSettlementAccount[];
+  counts: { paymentLinks: number; invoices: number; apiKeys: number; webhooks: number };
+  /** What an officer has to do next, in order. Empty once fully set up. */
+  outstanding: string[];
+}
+
+export interface MerchantPaymentLink {
+  id: string;
+  linkHash: string;
+  title: string;
+  description: string | null;
+  amount: string | null;
+  currencyCode: string;
+  isFixedAmount: boolean;
+  isActive: boolean;
+  status: string;
+  maxUses: number | null;
+  currentUses: number;
+  pendingUses: number;
+  expiresAt: string | null;
+  createdAt: string;
+  shareableUrl: string;
+}
+
+export interface MerchantInvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: string;
+  totalAmount: string;
+}
+
+export interface MerchantInvoice {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  customerEmail: string;
+  totalAmount: string;
+  currencyCode: string;
+  status: string;
+  dueDate: string;
+  createdAt: string;
+  paidAt: string | null;
+  items: MerchantInvoiceItem[];
+}
+
+export interface MerchantInvoiceDetail extends MerchantInvoice {
+  merchantName: string | null;
+  merchantEmail: string | null;
+  linkHash: string | null;
+}
+
+export interface MerchantApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  isActive: boolean;
+  permissions: unknown;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** Returned once, on creation. The secret is never retrievable again. */
+export interface MerchantApiKeyCreated {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  secret: string;
+}
+
+export interface MerchantWebhook {
+  id: string;
+  url: string;
+  events: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** Returned once, on creation. */
+export interface MerchantWebhookCreated {
+  id: string;
+  url: string;
+  events: string[];
+  signingSecret: string;
 }

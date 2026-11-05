@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { BadgeCheck, Building2, ShieldAlert } from 'lucide-react';
+import { BadgeCheck, Building2, FileCheck2, ShieldAlert } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -23,6 +23,7 @@ import { portalApi } from '@/services/portal';
 import { ORG_CATEGORIES } from '@/data/catalog';
 import { date } from '@/lib/format';
 import { uploadImage } from '@/lib/upload';
+import type { CommunityPolicy, CommunityPolicyArea } from '@/types';
 
 interface Community {
   id: string;
@@ -41,9 +42,73 @@ interface Community {
   rejectionReason: string | null;
 }
 
-type Tab = 'profile' | 'verification';
+type Tab = 'profile' | 'policies' | 'verification';
 
-export function SettingsClient({ community }: { community: Community }) {
+const POLICY_COPY: Record<CommunityPolicyArea, { title: string; description: string; placeholder: string }> = {
+  JOINING: { title: 'Joining the community', description: 'Eligibility, required documents, joining fees, approval and exit rules.', placeholder: 'Who can join, documents required, joining fee, approval timeline, exit conditions…' },
+  CONTRIBUTIONS: { title: 'Contributions', description: 'Amounts, frequency, due dates, grace periods, fees and missed-payment handling.', placeholder: 'Contribution schedule, payment deadline, grace period, late fee, refunds…' },
+  SAVINGS: { title: 'Savings', description: 'Deposits, withdrawals, notice periods, interest and account closure.', placeholder: 'Minimum balance, withdrawal notice, interest calculation, closure rules…' },
+  LOANS: { title: 'Loans', description: 'Eligibility, limits, guarantors, pricing, approval, repayment and default.', placeholder: 'Eligibility period, maximum loan, guarantors, interest, tenor, default actions…' },
+  WELFARE: { title: 'Welfare', description: 'Eligible needs, evidence, limits, review stages and payout conditions.', placeholder: 'Covered situations, evidence required, support cap, review and payment process…' },
+  OPPORTUNITIES: { title: 'Opportunities', description: 'Eligibility, selection, fees, deadlines and participant obligations.', placeholder: 'Who qualifies, how selection works, closing dates, fees and participation rules…' },
+};
+
+type PolicyRuleField = {
+  key: string;
+  label: string;
+  help: string;
+  type: 'number' | 'boolean' | 'kyc';
+  suffix?: string;
+};
+
+const POLICY_RULE_FIELDS: Record<CommunityPolicyArea, PolicyRuleField[]> = {
+  JOINING: [
+    { key: 'minimumAge', label: 'Minimum age', help: 'Leave blank for no age restriction.', type: 'number', suffix: 'years' },
+    { key: 'joiningFee', label: 'Joining fee', help: 'One-time amount charged to an approved applicant.', type: 'number', suffix: 'NGN' },
+    { key: 'requiredKycTier', label: 'Required KYC tier', help: 'Identity level required before admission.', type: 'kyc' },
+    { key: 'refereeRequired', label: 'Referee required', help: 'Require an existing member or referee.', type: 'boolean' },
+    { key: 'approvalRequired', label: 'Officer approval', help: 'Applications must be reviewed by an officer.', type: 'boolean' },
+  ],
+  CONTRIBUTIONS: [
+    { key: 'minimumMembershipMonths', label: 'Membership period', help: 'Months a member must be active before joining.', type: 'number', suffix: 'months' },
+    { key: 'minimumContribution', label: 'Minimum contribution', help: 'Lowest permitted contribution amount.', type: 'number', suffix: 'NGN' },
+    { key: 'gracePeriodDays', label: 'Payment grace period', help: 'Days allowed after a contribution is due.', type: 'number', suffix: 'days' },
+    { key: 'lateFee', label: 'Late fee', help: 'Fee charged after the grace period.', type: 'number', suffix: 'NGN' },
+    { key: 'advancePaymentAllowed', label: 'Advance payment', help: 'Allow members to pay future periods early.', type: 'boolean' },
+  ],
+  SAVINGS: [
+    { key: 'minimumMembershipMonths', label: 'Membership period', help: 'Months active before opening savings.', type: 'number', suffix: 'months' },
+    { key: 'minimumOpeningBalance', label: 'Opening balance', help: 'Minimum first deposit.', type: 'number', suffix: 'NGN' },
+    { key: 'minimumBalance', label: 'Minimum retained balance', help: 'Balance that must remain after withdrawal.', type: 'number', suffix: 'NGN' },
+    { key: 'withdrawalNoticeDays', label: 'Withdrawal notice', help: 'Notice required before funds can be released.', type: 'number', suffix: 'days' },
+    { key: 'maximumWithdrawalsPerMonth', label: 'Monthly withdrawals', help: 'Maximum withdrawals allowed each month.', type: 'number' },
+  ],
+  LOANS: [
+    { key: 'minimumMembershipMonths', label: 'Active membership', help: 'Months a member must be active before applying.', type: 'number', suffix: 'months' },
+    { key: 'minimumSavingsBalance', label: 'Minimum savings balance', help: 'Savings required to qualify.', type: 'number', suffix: 'NGN' },
+    { key: 'minimumContributionMonths', label: 'Contribution history', help: 'Minimum paid contribution periods.', type: 'number', suffix: 'periods' },
+    { key: 'maxLoanToSavingsRatio', label: 'Loan-to-savings limit', help: 'Maximum loan as a multiple of savings.', type: 'number', suffix: '× savings' },
+    { key: 'maximumActiveLoans', label: 'Active loan limit', help: 'Maximum simultaneous active loans.', type: 'number' },
+    { key: 'guarantorsRequired', label: 'Required guarantors', help: 'Minimum guarantors per application.', type: 'number' },
+    { key: 'requiredKycTier', label: 'Required KYC tier', help: 'Identity level required to apply.', type: 'kyc' },
+    { key: 'noOverdueContributions', label: 'Contribution standing', help: 'Block applications with overdue contributions.', type: 'boolean' },
+  ],
+  WELFARE: [
+    { key: 'minimumMembershipMonths', label: 'Active membership', help: 'Months active before requesting welfare.', type: 'number', suffix: 'months' },
+    { key: 'minimumContributionMonths', label: 'Contribution history', help: 'Minimum paid contribution periods.', type: 'number', suffix: 'periods' },
+    { key: 'maximumClaimAmount', label: 'Maximum claim', help: 'Largest welfare request permitted.', type: 'number', suffix: 'NGN' },
+    { key: 'coolingOffDays', label: 'Cooling-off period', help: 'Days before another approved claim.', type: 'number', suffix: 'days' },
+    { key: 'evidenceRequired', label: 'Supporting evidence', help: 'Require documents before review.', type: 'boolean' },
+  ],
+  OPPORTUNITIES: [
+    { key: 'minimumMembershipMonths', label: 'Active membership', help: 'Months active before applying.', type: 'number', suffix: 'months' },
+    { key: 'minimumSavingsBalance', label: 'Minimum savings balance', help: 'Savings required to participate.', type: 'number', suffix: 'NGN' },
+    { key: 'requiredKycTier', label: 'Required KYC tier', help: 'Identity level required to participate.', type: 'kyc' },
+    { key: 'approvalRequired', label: 'Officer approval', help: 'Applications require officer approval.', type: 'boolean' },
+  ],
+};
+
+export function SettingsClient({ community, initialPolicies }: { community: Community; initialPolicies: CommunityPolicy[] }) {
   const communityId = useCommunityId();
   // Read-only for an officer without write access. The form used to look
   // editable and only refuse on save, which wasted the typing and read as a
@@ -59,6 +124,23 @@ export function SettingsClient({ community }: { community: Community }) {
   const [category, setCategory] = useState(community.category ?? '');
   const [registrationNumber, setRegistrationNumber] = useState(community.registrationNumber ?? '');
   const [verificationFile, setVerificationFile] = useState<File | null>(null);
+  const [policies, setPolicies] = useState(initialPolicies);
+
+  const updatePolicyRule = (
+    area: CommunityPolicyArea,
+    key: string,
+    value: string | number | boolean | undefined,
+  ) => {
+    setPolicies((current) =>
+      current.map((policy) => {
+        if (policy.area !== area) return policy;
+        const rules = { ...policy.rules };
+        if (value === undefined || value === '') delete rules[key];
+        else rules[key] = value;
+        return { ...policy, rules };
+      }),
+    );
+  };
 
   const save = useMutation(
     () =>
@@ -98,6 +180,23 @@ export function SettingsClient({ community }: { community: Community }) {
     },
   );
 
+  const savePolicy = useMutation(
+    (policy: CommunityPolicy) =>
+      portalApi.updatePolicy(communityId, {
+        area: policy.area,
+        content: policy.content,
+        rules: policy.rules,
+        isPublished: policy.isPublished,
+      }),
+    {
+      onSuccess: (saved) => {
+        setPolicies((current) => current.map((policy) => (policy.area === saved.area ? saved : policy)));
+        toast('Policy saved', 'success', saved.isPublished ? 'Published for members.' : 'Saved as an officer draft.');
+      },
+      onError: (message) => toast('Could not save policy', 'error', message),
+    },
+  );
+
   return (
     <>
       <PageHeader
@@ -129,6 +228,7 @@ export function SettingsClient({ community }: { community: Community }) {
         className="mb-4"
         tabs={[
           { value: 'profile', label: 'Profile' },
+          { value: 'policies', label: 'Service policies' },
           { value: 'verification', label: 'Verification' },
         ]}
       />
@@ -212,6 +312,158 @@ export function SettingsClient({ community }: { community: Community }) {
               <KV label="Country">{community.country}</KV>
             </dl>
           </Card>
+        </div>
+      ) : tab === 'policies' ? (
+        <div className="space-y-4">
+          <Callout tone="info" title="Policies make every service predictable">
+            Publish the rules members should see before joining or using a service. Drafts remain visible only to officers.
+          </Callout>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {policies.map((policy) => {
+              const copy = POLICY_COPY[policy.area];
+              const rules = policy.rules ?? {};
+              return (
+                <Card key={policy.area}>
+                  <CardHeader
+                    title={copy.title}
+                    subtitle={copy.description}
+                    action={<Badge tone={policy.isPublished ? 'green' : 'slate'}>{policy.isPublished ? 'Published' : 'Draft'}</Badge>}
+                  />
+                  <div className="space-y-4 px-5 pb-5">
+                    <div>
+                      <p className="label">Eligibility and operating rules</p>
+                      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                        {POLICY_RULE_FIELDS[policy.area].map((rule) => (
+                          <Field
+                            key={rule.key}
+                            label={rule.label}
+                            htmlFor={`policy-${policy.area}-${rule.key}`}
+                            hint={rule.help}
+                          >
+                            {rule.type === 'boolean' ? (
+                              <Select
+                                id={`policy-${policy.area}-${rule.key}`}
+                                value={
+                                  typeof rules[rule.key] === 'boolean'
+                                    ? String(rules[rule.key])
+                                    : ''
+                                }
+                                disabled={!canEdit}
+                                onChange={(event) =>
+                                  updatePolicyRule(
+                                    policy.area,
+                                    rule.key,
+                                    event.target.value === ''
+                                      ? undefined
+                                      : event.target.value === 'true',
+                                  )
+                                }
+                              >
+                                <option value="">Not configured</option>
+                                <option value="true">Required / allowed</option>
+                                <option value="false">Not required / not allowed</option>
+                              </Select>
+                            ) : rule.type === 'kyc' ? (
+                              <Select
+                                id={`policy-${policy.area}-${rule.key}`}
+                                value={String(rules[rule.key] ?? '')}
+                                disabled={!canEdit}
+                                onChange={(event) =>
+                                  updatePolicyRule(
+                                    policy.area,
+                                    rule.key,
+                                    event.target.value || undefined,
+                                  )
+                                }
+                              >
+                                <option value="">Not configured</option>
+                                <option value="TIER_0">Tier 0</option>
+                                <option value="TIER_1">Tier 1</option>
+                                <option value="TIER_2">Tier 2</option>
+                                <option value="TIER_3">Tier 3</option>
+                              </Select>
+                            ) : (
+                              <div className="relative">
+                                <Input
+                                  id={`policy-${policy.area}-${rule.key}`}
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={String(rules[rule.key] ?? '')}
+                                  disabled={!canEdit}
+                                  className={rule.suffix ? 'pr-24' : undefined}
+                                  onChange={(event) =>
+                                    updatePolicyRule(
+                                      policy.area,
+                                      rule.key,
+                                      event.target.value === ''
+                                        ? undefined
+                                        : Number(event.target.value),
+                                    )
+                                  }
+                                />
+                                {rule.suffix && (
+                                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-slate-400">
+                                    {rule.suffix}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </Field>
+                        ))}
+                      </div>
+                    </div>
+                    <Field label="Policy terms" htmlFor={`policy-${policy.area}`}>
+                      <Textarea
+                        id={`policy-${policy.area}`}
+                        rows={8}
+                        value={policy.content}
+                        placeholder={copy.placeholder}
+                        disabled={!canEdit}
+                        onChange={(event) =>
+                          setPolicies((current) => current.map((item) =>
+                            item.area === policy.area ? { ...item, content: event.target.value } : item,
+                          ))
+                        }
+                      />
+                    </Field>
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <Field label="Visibility" htmlFor={`policy-status-${policy.area}`}>
+                        <Select
+                          id={`policy-status-${policy.area}`}
+                          value={policy.isPublished ? 'published' : 'draft'}
+                          disabled={!canEdit}
+                          onChange={(event) =>
+                            setPolicies((current) => current.map((item) =>
+                              item.area === policy.area
+                                ? { ...item, isPublished: event.target.value === 'published' }
+                                : item,
+                            ))
+                          }
+                        >
+                          <option value="draft">Officer draft</option>
+                          <option value="published">Published to members</option>
+                        </Select>
+                      </Field>
+                      <div className="flex items-center gap-3">
+                        {policy.version > 0 && <span className="text-xs text-slate-400">Version {policy.version}</span>}
+                        {canEdit && (
+                          <Button
+                            icon={<FileCheck2 className="h-4 w-4" />}
+                            disabled={!policy.content.trim()}
+                            loading={savePolicy.pending}
+                            onClick={() => void savePolicy.run(policy)}
+                          >
+                            Save policy
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">

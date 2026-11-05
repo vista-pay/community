@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { ArrowDownLeft, ArrowUpRight, Check, Copy, Landmark, ReceiptText, Wallet } from 'lucide-react';
 import {
   Card,
@@ -64,13 +65,20 @@ export function WalletClient({ initial }: { initial: WalletData }) {
         <div className="flex flex-col gap-6 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div className="max-w-md">
             <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-white/60">
-              <Landmark className="h-4 w-4" /> Community deposit account
+              <Landmark className="h-4 w-4" /> Merchant account
             </p>
             <h2 className="mt-2 text-lg font-bold">Fund the wallet by bank transfer</h2>
             <p className="mt-1 text-[13px] leading-5 text-white/70">
               A transfer from any Nigerian bank to this account credits the wallet automatically —
-              share it with members for dues, levies and donations.
+              share it with members for dues, levies and donations. It is a merchant account in the
+              community&rsquo;s own name, not a personal one.
             </p>
+            <Link
+              href="/merchant"
+              className="mt-3 inline-block text-[13px] font-semibold text-white/80 underline-offset-4 hover:underline"
+            >
+              Merchant settings
+            </Link>
           </div>
 
           {depositAccount ? (

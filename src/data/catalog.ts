@@ -26,6 +26,11 @@ export const ASSIGNABLE_ROLES = [
   { value: 'COMMUNITY_SECRETARY', label: 'Secretary', description: 'Members, meetings, minutes and communications' },
   { value: 'COMMUNITY_LOAN_OFFICER', label: 'Loan officer', description: 'Loan applications and products' },
   { value: 'COMMUNITY_AUDITOR', label: 'Auditor', description: 'Read-only across the books and records' },
+  {
+    value: 'COMMUNITY_MERCHANT_MANAGER',
+    label: 'Merchant manager',
+    description: 'Payment links, invoices, settlement accounts and integrations',
+  },
 ] as const;
 
 export const ORG_CATEGORIES = [

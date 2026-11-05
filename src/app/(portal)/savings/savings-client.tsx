@@ -1,5 +1,6 @@
 'use client';
 
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useState } from 'react';
 import { AlertTriangle, Landmark, Lock, PiggyBank, Plus } from 'lucide-react';
 import {
@@ -699,7 +700,6 @@ function StatementModal({
  */
 function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
   const communityId = useCommunityId();
-  const { toast } = useToast();
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -708,26 +708,20 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
     [communityId],
   );
 
-  const decide = useMutation(
-    (requestId: string, approve: boolean, note?: string) =>
-      portalApi.decideSavingsWithdrawal(communityId, requestId, approve, note),
-    {
-      onSuccess: async (result) => {
-        toast(
-          result.status === 'PAID' ? 'Withdrawal paid' : 'Request rejected',
-          'success',
-          result.status === 'PAID'
-            ? 'The money has left the community wallet for the member.'
-            : 'The member sees your reason in the app.',
-        );
-        setRejectingId(null);
-        setRejectNote('');
-        await requests.refresh();
-        onSettled();
-      },
-      onError: (message) => toast('Could not record the decision', 'error', message),
+  // Approving releases community money, so it runs through the owner approval
+  // gate. Rejecting moves nothing and the API asks for no code, so the same
+  // gate handles both — the server decides which needs approval.
+  const decide = useMoneyOutOtp<{ requestId: string; approve: boolean; note?: string }>({
+    perform: (extra, { requestId, approve, note }) =>
+      portalApi.decideSavingsWithdrawal(communityId, requestId, approve, note, extra),
+    onDone: async () => {
+      setRejectingId(null);
+      setRejectNote('');
+      await requests.refresh();
+      onSettled();
     },
-  );
+    successMessage: 'Decision recorded',
+  });
 
   const pending = (requests.data ?? []).filter((r) => r.status === 'PENDING');
   if (pending.length === 0) return null;
@@ -758,7 +752,7 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
                 <Button
                   size="xs"
                   disabled={decide.pending}
-                  onClick={() => decide.run(r.id, true)}
+                  onClick={() => void decide.run({ requestId: r.id, approve: true })}
                 >
                   Approve & pay
                 </Button>
@@ -787,7 +781,9 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
                   size="xs"
                   variant="danger"
                   disabled={decide.pending || rejectNote.trim().length < 5}
-                  onClick={() => decide.run(r.id, false, rejectNote.trim())}
+                  onClick={() =>
+                    void decide.run({ requestId: r.id, approve: false, note: rejectNote.trim() })
+                  }
                 >
                   Confirm rejection
                 </Button>
@@ -796,6 +792,8 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
           </div>
         ))}
       </div>
+      {/* The gate opens this when the server asks for the owner's code. */}
+      <MoneyOutOtpDialog gate={decide} />
     </Card>
   );
 }

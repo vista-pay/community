@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { Route } from 'next';
@@ -13,7 +13,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CreditCard,
+  FileText,
   Globe,
+  Link2,
   HandCoins,
   HeartHandshake,
   LayoutDashboard,
@@ -22,9 +24,11 @@ import {
   MessagesSquare,
   PiggyBank,
   RefreshCw,
+  Scale,
   Settings,
   ShieldAlert,
   Sparkles,
+  Store,
   UserCog,
   UserPlus,
   Users,
@@ -34,48 +38,84 @@ import {
 import { cn } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
 import { useSession } from '@/components/providers/session-provider';
+import { useQuery } from '@/hooks/use-query';
+import { portalApi } from '@/services/portal';
+import type { DashboardData } from '@/types';
 import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 
-type NavItem = { href: Route; label: string; icon: typeof Users; exact?: boolean };
+type NavigationCounts = NonNullable<DashboardData['navigationCounts']>;
+type NavCountKey = keyof NavigationCounts;
+type NavItem = {
+  href: Route;
+  label: string;
+  icon: typeof Users;
+  exact?: boolean;
+  countKey: NavCountKey;
+};
 
 const NAV: Array<{ group: string; items: NavItem[] }> = [
-  { group: 'Overview', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
+  {
+    group: 'Overview',
+    items: [
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, countKey: 'dashboard' },
+    ],
+  },
   {
     group: 'Community',
     items: [
-      { href: '/members', label: 'Members', icon: Users, exact: true },
-      { href: '/members/requests', label: 'Join requests', icon: UserPlus },
-      { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw },
-      { href: '/savings', label: 'Savings', icon: PiggyBank },
-      { href: '/loans', label: 'Loans', icon: HandCoins },
+      { href: '/members', label: 'Members', icon: Users, exact: true, countKey: 'members' },
+      { href: '/members/requests', label: 'Join requests', icon: UserPlus, countKey: 'joinRequests' },
+      { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw, countKey: 'contributions' },
+      { href: '/savings', label: 'Savings', icon: PiggyBank, countKey: 'savings' },
+      { href: '/loans', label: 'Loans', icon: HandCoins, countKey: 'loans' },
       // { href: '/services', label: 'Services', icon: Sparkles },
-      { href: '/welfare', label: 'Welfare', icon: HeartHandshake },
-      { href: '/opportunities', label: 'Opportunities', icon: Sparkles },
+      { href: '/welfare', label: 'Welfare', icon: HeartHandshake, countKey: 'welfare' },
+      { href: '/opportunities', label: 'Opportunities', icon: Sparkles, countKey: 'opportunities' },
     ],
   },
   {
     group: 'Finance',
     items: [
-      { href: '/wallet', label: 'Wallet', icon: WalletIcon },
-      { href: '/accounting', label: 'Accounting', icon: BookOpen },
-      { href: '/reports', label: 'Reports', icon: BarChart3 },
+      { href: '/wallet', label: 'Wallet', icon: WalletIcon, countKey: 'wallet' },
+      { href: '/accounting', label: 'Accounting', icon: BookOpen, countKey: 'accounting' },
+      { href: '/trial-balance', label: 'Trial balance', icon: Scale, countKey: 'trialBalance' },
+      { href: '/reports', label: 'Reports', icon: BarChart3, countKey: 'reports' },
+    ],
+  },
+  {
+    // A community is a merchant account: it collects in its own name, holds
+    // its own settlement accounts, and is registered as a merchant entity at
+    // the payment provider. Its own group rather than a corner of Finance —
+    // Finance is the community's internal books, this is its outward face.
+    group: 'Merchant',
+    items: [
+      { href: '/merchant', label: 'Merchant account', icon: Store, exact: true, countKey: 'merchant' },
+      { href: '/merchant/payment-links', label: 'Payment links', icon: Link2, countKey: 'merchantPaymentLinks' },
+      { href: '/merchant/invoices', label: 'Invoices', icon: FileText, countKey: 'merchantInvoices' },
+      // Hidden until the backend supports them. An API key authenticates
+      // nothing — there is no key guard or strategy in the API — and nothing
+      // dispatches to a registered webhook endpoint. The pages still exist and
+      // the endpoints still work; uncomment these two lines once a request can
+      // actually be made with a key and an endpoint can actually be called.
+      // { href: '/merchant/api-keys', label: 'API keys', icon: KeyRound, countKey: 'merchantApiKeys' },
+      // { href: '/merchant/webhooks', label: 'Webhooks', icon: Webhook, countKey: 'merchantWebhooks' },
     ],
   },
   {
     group: 'Governance',
     items: [
-      { href: '/governance', label: 'Meetings & votes', icon: CalendarDays },
-      { href: '/communications', label: 'Communications', icon: MessagesSquare },
-      { href: '/listing', label: 'Public listing', icon: Globe },
+      { href: '/governance', label: 'Meetings & votes', icon: CalendarDays, countKey: 'governance' },
+      { href: '/communications', label: 'Communications', icon: MessagesSquare, countKey: 'communications' },
+      { href: '/listing', label: 'Public listing', icon: Globe, countKey: 'listing' },
     ],
   },
   {
     group: 'Manage',
     items: [
-      { href: '/staff', label: 'Staff & roles', icon: UserCog },
-      { href: '/billing', label: 'Billing & plan', icon: CreditCard },
-      { href: '/settings', label: 'Settings', icon: Settings },
+      { href: '/staff', label: 'Staff & roles', icon: UserCog, countKey: 'staff' },
+      { href: '/billing', label: 'Billing & plan', icon: CreditCard, countKey: 'billing' },
+      { href: '/settings', label: 'Settings', icon: Settings, countKey: 'settings' },
     ],
   },
 ];
@@ -86,6 +126,33 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { data: navigationCounts, refresh: refreshNavigation } = useQuery<NavigationCounts | null>(
+    () => (community ? portalApi.navigationBadges(community.id) : Promise.resolve(null)),
+    [community?.id],
+    { enabled: Boolean(community) },
+  );
+
+  useEffect(() => {
+    if (!community) return;
+    const timer = window.setInterval(() => void refreshNavigation(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [community, refreshNavigation]);
+
+  useEffect(() => {
+    if (!community) return;
+    const item = NAV.flatMap((group) => group.items)
+      .sort((a, b) => b.href.length - a.href.length)
+      .find((candidate) =>
+        candidate.exact
+          ? pathname === candidate.href
+          : pathname === candidate.href || pathname.startsWith(`${candidate.href}/`),
+      );
+    if (!item) return;
+    void portalApi
+      .markNavigationRead(community.id, item.countKey)
+      .then(() => refreshNavigation())
+      .catch(() => undefined);
+  }, [community, pathname, refreshNavigation]);
 
   const unverified = community?.status !== 'VERIFIED';
 
@@ -133,7 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           collapsed ? 'w-[72px]' : 'w-64',
         )}
       >
-        <Sidebar collapsed={collapsed} />
+        <Sidebar collapsed={collapsed} counts={navigationCounts ?? undefined} />
         <button
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -151,7 +218,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setMobileOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-fade-in bg-navy-900">
-            <Sidebar collapsed={false} onNavigate={() => setMobileOpen(false)} />
+            <Sidebar
+              collapsed={false}
+              counts={navigationCounts ?? undefined}
+              onNavigate={() => setMobileOpen(false)}
+            />
             <button
               onClick={() => setMobileOpen(false)}
               aria-label="Close menu"
@@ -191,7 +262,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+function Sidebar({
+  collapsed,
+  counts,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  counts?: NavigationCounts;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const { community } = useSession();
 
@@ -232,26 +311,40 @@ function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
               </p>
             )}
             <ul className="space-y-0.5">
-              {group.items.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={onNavigate}
-                    title={collapsed ? item.label : undefined}
-                    aria-current={isActive(item) ? 'page' : undefined}
-                    className={cn(
-                      'group flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium transition focus-ring',
-                      collapsed && 'justify-center px-0',
-                      isActive(item)
-                        ? 'bg-white/10 text-white shadow-[inset_2px_0_0_#10B981]'
-                        : 'text-navy-200 hover:bg-white/5 hover:text-white',
-                    )}
-                  >
-                    <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
-                    {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                  </Link>
-                </li>
-              ))}
+              {group.items.map((item) => {
+                const count = counts?.[item.countKey] ?? 0;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      title={collapsed ? item.label : undefined}
+                      aria-current={isActive(item) ? 'page' : undefined}
+                      className={cn(
+                        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium transition focus-ring',
+                        collapsed && 'justify-center px-0',
+                        isActive(item)
+                          ? 'bg-white/10 text-white shadow-[inset_2px_0_0_#10B981]'
+                          : 'text-navy-200 hover:bg-white/5 hover:text-white',
+                      )}
+                    >
+                      <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                      {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+                      {count > 0 && (
+                        <span
+                          className={cn(
+                            'tnum flex min-w-5 items-center justify-center rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold leading-4 text-white',
+                            collapsed && 'absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[9px]',
+                          )}
+                          aria-label={`${count} update${count === 1 ? '' : 's'}`}
+                        >
+                          {count > 99 ? '99+' : count}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         ))}
