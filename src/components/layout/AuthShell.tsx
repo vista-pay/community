@@ -15,7 +15,7 @@ export function AuthShell({
     <div className="flex min-h-dvh bg-white">
       <section className="relative hidden w-[43%] min-w-[480px] flex-col overflow-hidden bg-[#101828] px-16 py-16 text-white lg:flex">
         <div className="relative z-10 flex items-center gap-3">
-          <img src="/Symbol.png" alt="Rendi" className="h-10 w-10 rounded-[11px] bg-white" />
+          <img src="/rendi-logo.svg" alt="Rendi" className="h-10 w-10 rounded-[11px] bg-white" />
           <span className="text-[21px] font-extrabold tracking-tight">RENDI</span>
           <span className="rounded-md bg-[#2563EB] px-1.5 py-0.5 text-[10px] font-bold">COMMUNITY</span>
         </div>

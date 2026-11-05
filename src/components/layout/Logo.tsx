@@ -3,7 +3,7 @@
 import { cn } from '@/lib/format';
 
 export function LogoMark({ className }: { className?: string }) {
-  return <img src="/Symbol.png" className={cn('h-8 w-8 rounded-lg', className)} alt="Rendi" />;
+  return <img src="/rendi-logo.svg" className={cn('h-8 w-8 rounded-lg', className)} alt="Rendi" />;
 }
 
 export function Logo({ dark, compact }: { dark?: boolean; compact?: boolean }) {

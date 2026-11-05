@@ -15,7 +15,7 @@ export default function NotFound() {
       <div className="relative mx-auto flex w-full max-w-6xl flex-col">
         <header className="flex items-center justify-between">
           <Link href="/dashboard" className="focus-ring flex items-center gap-3 rounded-xl">
-            <img src="/Symbol.png" alt="" className="h-10 w-10 rounded-xl bg-white shadow-sm" />
+            <img src="/rendi-logo.svg" alt="" className="h-10 w-10 rounded-xl bg-white shadow-sm" />
             <div>
               <p className="text-[15px] font-extrabold tracking-tight text-navy-900">RENDI</p>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-700">Community</p>
