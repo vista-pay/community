@@ -396,7 +396,13 @@ export const portalApi = {
   disburseLoan: (loanId: string, extra: MoneyOutExtra = {}) =>
     post<Loan>(`/ajo-loans/${loanId}/disburse`, extra, {
       headers: {
-        'Idempotency-Key': `ajo-loan-disbursement-${loanId}`,
+        // The first call intentionally has no OTP and may create a 428
+        // approval challenge. The confirmation is a different HTTP request
+        // body, so it must use a different idempotency key; otherwise the
+        // API correctly rejects the key/body mismatch before checking the
+        // OTP. The service row-lock still makes the actual money movement
+        // exactly-once when two distinct attempts race.
+        'Idempotency-Key': `ajo-loan-disbursement-${loanId}-${crypto.randomUUID()}`,
       },
     }),
 
