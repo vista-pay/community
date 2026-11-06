@@ -47,10 +47,20 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const json = await res.json().catch(() => null);
 
   if (res.status === 401) {
-    // The proxy has already tried to refresh. A 401 here means the session is
-    // genuinely over, so send the officer to sign in rather than leaving a
-    // page of permanent spinners.
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/signin')) {
+    // The proxy has already tried to refresh, and it only answers 401 when the
+    // API rejected the refresh token outright — an unreachable API answers 503
+    // and the session is left alone.
+    //
+    // Gated on the code rather than the status: an endpoint that answers 401
+    // for its own reasons must not take the whole session down with it. A 401
+    // without the marker is reported, not acted on.
+    const sessionOver = json?.code === 'SESSION_EXPIRED';
+
+    if (
+      sessionOver &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/signin')
+    ) {
       // A full load, not router.push: the session is gone, and every cached
       // server component in memory was rendered for a user who is no longer
       // signed in. Throwing the document away is the point.

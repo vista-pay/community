@@ -7,8 +7,8 @@ export const metadata: Metadata = { title: 'Savings' };
 
 export default async function SavingsPage() {
   const [overview, products, members] = await Promise.all([
-    communityGet<SavingsOverview>('/savings/accounts'),
-    communityGet<SavingsProduct[]>('/savings/products'),
+    communityGet<SavingsOverview>('/portal/savings/accounts'),
+    communityGet<SavingsProduct[]>('/portal/savings/products'),
     communityGet<MemberRow[]>('/members'),
   ]);
 

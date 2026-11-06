@@ -9,7 +9,7 @@ export default async function ReportsPage() {
   const [statements, dashboard, savings] = await Promise.all([
     communityGet<Statements>('/accounting/statements'),
     communityGet<DashboardData>('/dashboard'),
-    communityGet<SavingsOverview>('/savings/accounts'),
+    communityGet<SavingsOverview>('/portal/savings/accounts'),
   ]);
 
   return <ReportsClient statements={statements} dashboard={dashboard} savings={savings} />;

@@ -68,6 +68,7 @@ import type {
   MerchantSettlementAccount,
   MerchantWebhook,
   MerchantWebhookCreated,
+  CommunityConfiguration,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -213,8 +214,8 @@ export const portalApi = {
   postJournal: (communityId: string, entryId: string) =>
     post<JournalEntry>(path(communityId, `/accounting/journals/${entryId}/post`)),
 
-  reverseJournal: (communityId: string, entryId: string, reason: string) =>
-    post<JournalEntry>(path(communityId, `/accounting/journals/${entryId}/reverse`), { reason }),
+  reverseJournal: (communityId: string, entryId: string, reason: string, otp?: string) =>
+    post<JournalEntry>(path(communityId, `/accounting/journals/${entryId}/reverse`), { reason, otp }),
 
   statements: (communityId: string, params?: { from?: string; to?: string }) =>
     get<Statements>(path(communityId, '/accounting/statements'), params),
@@ -317,7 +318,7 @@ export const portalApi = {
   // ───────────────────────────── Savings ─────────────────────────────
 
   savingsWithdrawalRequests: (communityId: string) =>
-    get<SavingsWithdrawalRequestRow[]>(`/communities/${communityId}/savings/withdrawal-requests`),
+    get<SavingsWithdrawalRequestRow[]>(`/communities/${communityId}/portal/savings/withdrawal-requests`),
   decideSavingsWithdrawal: (
     communityId: string,
     requestId: string,
@@ -329,24 +330,27 @@ export const portalApi = {
     extra: MoneyOutExtra = {},
   ) =>
     patch<{ id: string; status: string }>(
-      `/communities/${communityId}/savings/withdrawal-requests/${requestId}`,
+      `/communities/${communityId}/portal/savings/withdrawal-requests/${requestId}`,
       { approve, note, ...extra },
     ),
 
   savingsProducts: (communityId: string) =>
-    get<SavingsProduct[]>(path(communityId, '/savings/products')),
+    get<SavingsProduct[]>(path(communityId, '/portal/savings/products')),
 
-  createSavingsProduct: (communityId: string, body: Record<string, unknown>) =>
-    post<SavingsProduct>(path(communityId, '/savings/products'), body),
+  createSavingsProduct: (
+    communityId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) => post<SavingsProduct>(path(communityId, '/portal/savings/products'), { ...body, ...extra }),
 
   savingsAccounts: (communityId: string) =>
-    get<SavingsOverview>(path(communityId, '/savings/accounts')),
+    get<SavingsOverview>(path(communityId, '/portal/savings/accounts')),
 
   openSavingsAccount: (communityId: string, body: { memberId: string; productId: string }) =>
-    post<unknown>(path(communityId, '/savings/accounts'), body),
+    post<unknown>(path(communityId, '/portal/savings/accounts'), body),
 
   savingsStatement: (communityId: string, accountId: string) =>
-    get<SavingsStatement>(path(communityId, `/savings/accounts/${accountId}`)),
+    get<SavingsStatement>(path(communityId, `/portal/savings/accounts/${accountId}`)),
 
   recordSavingsEntry: (
     communityId: string,
@@ -358,7 +362,7 @@ export const portalApi = {
       reduceBalance?: boolean;
       note?: string;
     },
-  ) => post<unknown>(path(communityId, `/savings/accounts/${accountId}/entries`), body),
+  ) => post<unknown>(path(communityId, `/portal/savings/accounts/${accountId}/entries`), body),
 
   // ───────────────────────────── Lending ─────────────────────────────
 
@@ -368,11 +372,18 @@ export const portalApi = {
   communityLoans: (communityId: string, status?: string) =>
     get<Loan[]>(path(communityId, '/loans'), { status }),
 
-  createLoanProduct: (communityId: string, body: Record<string, unknown>) =>
-    post<LoanProduct>(path(communityId, '/loan-products'), body),
+  createLoanProduct: (
+    communityId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) => post<LoanProduct>(path(communityId, '/loan-products'), { ...body, ...extra }),
 
-  updateLoanProduct: (communityId: string, productId: string, body: Record<string, unknown>) =>
-    patch<LoanProduct>(path(communityId, `/loan-products/${productId}`), body),
+  updateLoanProduct: (
+    communityId: string,
+    productId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) => patch<LoanProduct>(path(communityId, `/loan-products/${productId}`), { ...body, ...extra }),
 
   quoteLoan: (
     communityId: string,
@@ -465,8 +476,11 @@ export const portalApi = {
 
   feeSettings: (groupId: string) => get<unknown>(`/ajo-groups/${groupId}/fee-settings`),
 
-  updateFeeSettings: (groupId: string, body: Record<string, unknown>) =>
-    patch<unknown>(`/ajo-groups/${groupId}/fee-settings`, body),
+  updateFeeSettings: (
+    groupId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) => patch<unknown>(`/ajo-groups/${groupId}/fee-settings`, { ...body, ...extra }),
 
   // ───────────────────────── Communications ─────────────────────────
 
@@ -583,10 +597,24 @@ export const portalApi = {
       customerName: string;
       customerEmail: string;
       currencyCode: string;
+      issueDate?: string;
       dueDate: string;
       items: Array<{ description: string; quantity: number; unitPrice: string }>;
     },
   ) => post<MerchantInvoice>(path(communityId, '/merchant/invoices'), body),
+
+  updateMerchantInvoice: (
+    communityId: string,
+    invoiceId: string,
+    body: {
+      customerName: string;
+      customerEmail: string;
+      currencyCode: string;
+      issueDate?: string;
+      dueDate: string;
+      items: Array<{ description: string; quantity: number; unitPrice: string }>;
+    },
+  ) => patch<MerchantInvoice>(path(communityId, `/merchant/invoices/${invoiceId}`), body),
 
   merchantInvoice: (communityId: string, invoiceId: string) =>
     get<MerchantInvoiceDetail>(path(communityId, `/merchant/invoices/${invoiceId}`)),
@@ -623,5 +651,21 @@ export const portalApi = {
   updatePolicy: (
     communityId: string,
     body: Pick<CommunityPolicy, 'area' | 'content' | 'rules' | 'isPublished'>,
-  ) => patch<CommunityPolicy>(path(communityId, '/service-policies'), body),
+    extra: MoneyOutExtra = {},
+  ) => patch<CommunityPolicy>(path(communityId, '/service-policies'), { ...body, ...extra }),
+
+  updateSavingsProduct: (
+    communityId: string,
+    productId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) =>
+    patch<SavingsProduct>(path(communityId, `/portal/savings/products/${productId}`), {
+      ...body,
+      ...extra,
+    }),
+
+  /** Everything the configuration page edits, in one read. */
+  configuration: (communityId: string) =>
+    get<CommunityConfiguration>(path(communityId, '/configuration')),
 };

@@ -24,8 +24,15 @@ import {
   MessagesSquare,
   PiggyBank,
   RefreshCw,
+  ChevronDown,
+  FileSpreadsheet,
+  ListTree,
+  NotebookPen,
+  Rows3,
   Scale,
   Settings,
+  TrendingUp,
+  SlidersHorizontal,
   ShieldAlert,
   Sparkles,
   Store,
@@ -47,6 +54,12 @@ import { NotificationsMenu } from './notifications-menu';
 type NavigationCounts = NonNullable<DashboardData['navigationCounts']>;
 type NavCountKey = keyof NavigationCounts;
 type NavItem = {
+  /**
+   * Sub-pages shown under a collapsible parent. The parent is a real page in
+   * its own right — a hub listing the same sections — so it stays a link
+   * rather than becoming a bare toggle an officer cannot navigate to.
+   */
+  children?: Array<Omit<NavItem, 'children'>>;
   href: Route;
   label: string;
   icon: typeof Users;
@@ -78,8 +91,22 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     group: 'Finance',
     items: [
       { href: '/wallet', label: 'Wallet', icon: WalletIcon, countKey: 'wallet' },
-      { href: '/accounting', label: 'Accounting', icon: BookOpen, countKey: 'accounting' },
-      { href: '/trial-balance', label: 'Trial balance', icon: Scale, countKey: 'trialBalance' },
+      {
+        href: '/accounting',
+        label: 'Accounting',
+        icon: BookOpen,
+        exact: true,
+        countKey: 'accounting',
+        children: [
+          { href: '/accounting/chart-of-accounts', label: 'Chart of accounts', icon: ListTree, countKey: 'accounting' },
+          { href: '/accounting/ledger', label: 'Ledger entries', icon: Rows3, countKey: 'accounting' },
+          { href: '/accounting/journals', label: 'Journals', icon: NotebookPen, countKey: 'accounting' },
+          { href: '/accounting/books', label: 'Books', icon: BookOpen, countKey: 'accounting' },
+          { href: '/trial-balance', label: 'Trial balance', icon: Scale, countKey: 'trialBalance' },
+          { href: '/accounting/revenue', label: 'Revenue', icon: TrendingUp, countKey: 'accounting' },
+          { href: '/accounting/statements', label: 'Statements', icon: FileSpreadsheet, countKey: 'accounting' },
+        ],
+      },
       { href: '/reports', label: 'Reports', icon: BarChart3, countKey: 'reports' },
     ],
   },
@@ -115,6 +142,10 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     items: [
       { href: '/staff', label: 'Staff & roles', icon: UserCog, countKey: 'staff' },
       { href: '/billing', label: 'Billing & plan', icon: CreditCard, countKey: 'billing' },
+      // One screen for everything that decides what members are charged or
+      // who qualifies. Every save on it is owner-approved, which is why it is
+      // separate from Settings rather than another tab inside it.
+      { href: '/configuration', label: 'Configuration', icon: SlidersHorizontal, countKey: 'configuration' },
       { href: '/settings', label: 'Settings', icon: Settings, countKey: 'settings' },
     ],
   },
@@ -313,6 +344,21 @@ function Sidebar({
             <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const count = counts?.[item.countKey] ?? 0;
+
+                if (item.children?.length) {
+                  return (
+                    <NavDisclosure
+                      key={item.href}
+                      item={item}
+                      count={count}
+                      counts={counts}
+                      collapsed={collapsed}
+                      pathname={pathname}
+                      onNavigate={onNavigate}
+                    />
+                  );
+                }
+
                 return (
                   <li key={item.href}>
                     <Link
@@ -473,5 +519,143 @@ function VerificationBanner() {
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A nav item that owns sub-pages.
+ *
+ * Open state is seeded from the route and then controlled, so landing on
+ * /accounting/journals shows the section already expanded — an officer who
+ * followed a link should not have to re-open the group to see where they
+ * are. Toggling afterwards is remembered for the session.
+ *
+ * The parent stays a link, not a bare toggle: /accounting is a real hub page
+ * listing the same sections, and turning it into a chevron-only row would
+ * make it unreachable.
+ */
+function NavDisclosure({
+  item,
+  count,
+  counts,
+  collapsed,
+  pathname,
+  onNavigate,
+}: {
+  item: NavItem;
+  count: number;
+  counts?: Partial<Record<NavCountKey, number>>;
+  collapsed: boolean;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const within = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  // A child may live outside the parent's path — trial balance is its own
+  // route — so section membership is decided by the children themselves.
+  const onChild = (item.children ?? []).some(
+    (c) => pathname === c.href || pathname.startsWith(`${c.href}/`),
+  );
+  // Derived, not synced. The route decides whether the section is open; the
+  // override only exists once an officer has deliberately toggled it, and
+  // then it wins. Mirroring the route into state and correcting it from an
+  // effect costs a second render and makes the two disagree in between.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? (within || onChild);
+
+  const parentActive = item.exact ? pathname === item.href : within;
+
+  if (collapsed) {
+    // No room for a tree. The parent alone keeps the section reachable.
+    return (
+      <li>
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          title={item.label}
+          aria-current={parentActive || onChild ? 'page' : undefined}
+          className={cn(
+            'group relative flex items-center justify-center rounded-lg py-2 text-[13.5px] font-medium transition focus-ring',
+            parentActive || onChild
+              ? 'bg-white/10 text-white shadow-[inset_2px_0_0_#10B981]'
+              : 'text-navy-200 hover:bg-white/5 hover:text-white',
+          )}
+        >
+          <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+        </Link>
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <div
+        className={cn(
+          'group flex items-center rounded-lg pr-1 transition',
+          parentActive
+            ? 'bg-white/10 text-white shadow-[inset_2px_0_0_#10B981]'
+            : 'text-navy-200 hover:bg-white/5 hover:text-white',
+        )}
+      >
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          aria-current={parentActive ? 'page' : undefined}
+          className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium focus-ring"
+        >
+          <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+          <span className="flex-1 truncate">{item.label}</span>
+          {count > 0 && (
+            <span className="tnum flex min-w-5 items-center justify-center rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold leading-4 text-white">
+              {count > 99 ? '99+' : count}
+            </span>
+          )}
+        </Link>
+        <button
+          type="button"
+          onClick={() => setOverride(!open)}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${item.label}`}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-navy-300 transition hover:bg-white/10 hover:text-white focus-ring"
+        >
+          <ChevronDown
+            className={cn('h-4 w-4 transition-transform', open && 'rotate-180')}
+            aria-hidden
+          />
+        </button>
+      </div>
+
+      {open && (
+        <ul className="mt-0.5 space-y-0.5 border-l border-white/10 pl-3 ml-5">
+          {(item.children ?? []).map((child) => {
+            const childActive =
+              pathname === child.href || pathname.startsWith(`${child.href}/`);
+            const childCount = counts?.[child.countKey] ?? 0;
+            return (
+              <li key={child.href}>
+                <Link
+                  href={child.href}
+                  onClick={onNavigate}
+                  aria-current={childActive ? 'page' : undefined}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition focus-ring',
+                    childActive
+                      ? 'bg-white/10 text-white'
+                      : 'text-navy-300 hover:bg-white/5 hover:text-white',
+                  )}
+                >
+                  <child.icon className="h-[15px] w-[15px] shrink-0" aria-hidden />
+                  <span className="flex-1 truncate">{child.label}</span>
+                  {childCount > 0 && (
+                    <span className="tnum flex min-w-4 items-center justify-center rounded-full bg-brand-500 px-1 py-0.5 text-[9px] font-bold leading-4 text-white">
+                      {childCount > 99 ? '99+' : childCount}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
   );
 }

@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import {
   BookOpen,
+  ArrowUpRight,
   Calculator,
   Landmark,
   Lock,
@@ -49,6 +51,7 @@ import { ExpenseModal } from './expense-modal';
 import { ReconcileModal } from './reconcile-modal';
 import { ModuleAccounting } from '@/components/accounting/module-accounting';
 import { ProfitAndLoss } from '@/components/accounting/profit-and-loss';
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 
 type Tab = 'journals' | 'chart' | 'statements' | 'banking' | 'expenses' | 'periods';
 
@@ -63,6 +66,7 @@ interface Initial {
 
 export function AccountingClient({ initial }: { initial: Initial }) {
   const communityId = useCommunityId();
+  const router = useRouter();
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('journals');
 
@@ -99,17 +103,15 @@ export function AccountingClient({ initial }: { initial: Initial }) {
     await Promise.all([journals.refresh(), statements.refresh(), cash.refresh(), chart.refresh()]);
   }
 
-  const reverse = useMutation(
-    (entryId: string, reason: string) => portalApi.reverseJournal(communityId, entryId, reason),
-    {
-      onSuccess: async () => {
-        toast('Entry reversed', 'success', 'The original stays on the record.');
-        setReversing(null);
-        await refreshBooks();
-      },
-      onError: (message) => toast('Could not reverse', 'error', message),
+  const reverse = useMoneyOutOtp<{ entryId: string; reason: string }>({
+    perform: (extra, payload) =>
+      portalApi.reverseJournal(communityId, payload.entryId, payload.reason, extra.otp),
+    onDone: async () => {
+      setReversing(null);
+      await refreshBooks();
     },
-  );
+    successMessage: 'Entry reversed',
+  });
 
   const postDraft = useMutation((entryId: string) => portalApi.postJournal(communityId, entryId), {
     onSuccess: async () => {
@@ -201,10 +203,44 @@ export function AccountingClient({ initial }: { initial: Initial }) {
         <Stat
           label="Trial balance"
           value={s.trialBalance.balanced ? 'Balanced' : 'Out'}
-          hint={`${money(s.trialBalance.debit)} Dr · ${money(s.trialBalance.credit)} Cr`}
+          hint={`${money(s.trialBalance.debit)} Dr · ${money(s.trialBalance.credit)} Cr · View full schedule`}
           icon={<BookOpen className="h-4 w-4" />}
           tone={s.trialBalance.balanced ? 'positive' : 'danger'}
+          onClick={() => router.push('/trial-balance')}
         />
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <Link
+          href="/trial-balance"
+          className="group flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-card transition hover:border-brand-300 hover:bg-brand-50/30 focus-ring"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-navy-900">Trial balance</span>
+            <span className="mt-0.5 block text-xs text-slate-500">Inspect every account and export the schedule</span>
+          </span>
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-brand-700" />
+        </Link>
+        <Link
+          href="/reports"
+          className="group flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-card transition hover:border-brand-300 hover:bg-brand-50/30 focus-ring"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-navy-900">Financial reports</span>
+            <span className="mt-0.5 block text-xs text-slate-500">View the balance sheet and period results</span>
+          </span>
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-brand-700" />
+        </Link>
+        <Link
+          href="/wallet"
+          className="group flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-card transition hover:border-brand-300 hover:bg-brand-50/30 focus-ring"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-navy-900">Wallet activity</span>
+            <span className="mt-0.5 block text-xs text-slate-500">Review the cash movements behind the books</span>
+          </span>
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-brand-700" />
+        </Link>
       </div>
 
       <ModuleAccounting modules={s.modules ?? []} />
@@ -305,7 +341,9 @@ export function AccountingClient({ initial }: { initial: Initial }) {
         requireReason
         reasonLabel="Why is this being reversed?"
         loading={reverse.pending}
-        onConfirm={(reason) => reversing && void reverse.run(reversing.id, reason)}
+        onConfirm={(reason) =>
+          reversing && void reverse.run({ entryId: reversing.id, reason })
+        }
         body={
           <>
             A mirror entry is posted today. The original stays exactly as it is, so the books show
@@ -313,6 +351,7 @@ export function AccountingClient({ initial }: { initial: Initial }) {
           </>
         }
       />
+      <MoneyOutOtpDialog gate={reverse} />
 
       <ConfirmDialog
         open={Boolean(closingPeriod)}
@@ -383,7 +422,7 @@ function JournalsTab({
       header: '',
       align: 'right',
       cell: (j) =>
-        j.status === 'POSTED' ? (
+        j.status === 'POSTED' && j.source === 'MANUAL' ? (
           <Button
             size="xs"
             variant="ghost"
@@ -392,7 +431,7 @@ function JournalsTab({
           >
             Reverse
           </Button>
-        ) : j.status === 'REVERSED' ? (
+        ) : j.status === 'REVERSED' || j.status === 'POSTED' ? (
           <span className="text-xs text-slate-400">—</span>
         ) : (
           <Button size="xs" variant="secondary" disabled={busy} onClick={() => onPost(j)}>

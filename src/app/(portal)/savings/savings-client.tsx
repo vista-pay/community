@@ -14,6 +14,7 @@ import {
   EmptyState,
   Field,
   Input,
+  LinkButton,
   Modal,
   PageHeader,
   Select,
@@ -70,9 +71,7 @@ export function SavingsClient({
               Open an account
             </Button>
           ) : (
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setProductOpen(true)}>
-              New product
-            </Button>
+            <LinkButton href={'/savings/new' as never} icon={<Plus className="h-4 w-4" />}>New product</LinkButton>
           )
         }
       />
@@ -196,7 +195,7 @@ export function SavingsClient({
                   icon={<PiggyBank className="h-5 w-5" />}
                   title="No savings products"
                   body="A product sets the interest rate, the minimum balance and whether members can withdraw."
-                  action={<Button onClick={() => setProductOpen(true)}>Create a product</Button>}
+                    action={<LinkButton href={'/savings/new' as never}>Create a product</LinkButton>}
                 />
               </Card>
             ) : (

@@ -57,8 +57,16 @@ export async function apiServer<T>(
   let res = await send(token);
 
   if (res.status === 401) {
-    token = await refreshSession();
-    if (token) res = await send(token);
+    // A server render cannot write cookies, so writeSession quietly fails
+    // here and the fresh token is used for this render only — the next call
+    // through a route handler persists it. An unreachable API leaves `res` as
+    // the original 401, which surfaces as an ApiError rather than silently
+    // rendering a signed-out page.
+    const refresh = await refreshSession();
+    if (refresh.status === 'refreshed') {
+      token = refresh.accessToken;
+      res = await send(token);
+    }
   }
 
   const json = await res.json().catch(() => null);

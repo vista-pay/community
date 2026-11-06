@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Scale } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, CheckCircle2, Download, Scale } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -55,6 +55,31 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
   }, [data.rows, query, showZero, type]);
 
   const difference = subtractMoney(data.trialBalance.debit, data.trialBalance.credit);
+
+  // Movement is not value. Every entry posts equal debits and credits, so the
+  // two totals always match and both grow with activity — a reversal pair
+  // adds twice its own amount while changing the position by nothing. The
+  // numbers officers actually want are the net balances.
+  const netOf = (types: BookAccountType[]) =>
+    data.rows
+      .filter((r) => types.includes(r.type))
+      .reduce((sum, r) => sum + Number(r.balance || 0), 0);
+  const netAssets = netOf(['ASSET']);
+  const netLiabilities = netOf(['LIABILITY']);
+
+  // Accounts that netted to zero: money passed straight through them, or an
+  // entry was reversed. They inflate the movement totals and tell you nothing
+  // about the position, which is the single most confusing thing on this page.
+  const passThrough = data.rows.filter(
+    (r) =>
+      (!isZeroMoney(r.debit) || !isZeroMoney(r.credit)) && isZeroMoney(r.balance),
+  );
+  const passThroughMovement = passThrough.reduce((sum, r) => sum + Number(r.debit || 0), 0);
+
+  // Balancing proves each entry was internally consistent. It proves nothing
+  // about whether everything that happened was recorded — which is exactly
+  // how a community reporting negative assets still showed a green tick.
+  const looksIncomplete = data.trialBalance.balanced && (netAssets < 0 || netLiabilities < 0);
   const movementCount = data.rows.filter(
     (row) => !isZeroMoney(row.debit) || !isZeroMoney(row.credit),
   ).length;
@@ -80,7 +105,7 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
     <>
       <PageHeader
         title="Trial balance"
-        subtitle="Account-by-account proof that every posted debit has an equal credit"
+        subtitle="Movement and net balance for every account. Balancing proves the entries are consistent, not that they are complete."
         actions={
           <Button
             variant="secondary"
@@ -108,11 +133,34 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
         </Card>
       )}
 
+      {looksIncomplete && (
+        <Card className="mb-5 border-amber-300 bg-amber-50">
+          <div className="flex items-start gap-3 px-5 py-4">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                The books balance, but they look incomplete
+              </p>
+              <p className="mt-1 text-[13px] leading-5 text-amber-800">
+                Debits equal credits, so every entry is internally consistent. But{' '}
+                {netAssets < 0 ? 'assets' : 'the amount owed to members'} is negative, which means
+                money left the books that never entered them — a movement reached the wallet
+                without being recorded here. Balancing cannot detect that.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Balance status"
           value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'}
-          hint={periodLabel}
+          hint={
+            data.trialBalance.balanced
+              ? 'Every entry posts equal debits and credits. This does not prove everything was recorded.'
+              : periodLabel
+          }
           icon={
             data.trialBalance.balanced ? (
               <CheckCircle2 className="h-4 w-4" />
@@ -123,14 +171,27 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
           tone={data.trialBalance.balanced ? 'positive' : 'danger'}
         />
         <Stat
-          label="Total debits"
+          // "Volume" is the word most officers reach for, and pairing it
+          // with "movement" removes the last reading where this looks like a
+          // balance the community holds.
+          label="Total movement (volume)"
           value={money(data.trialBalance.debit)}
-          icon={<Scale className="h-4 w-4" />}
+          hint="Everything posted, both sides. Not what the community holds."
+          icon={<ArrowLeftRight className="h-4 w-4" />}
+          footer={
+            passThroughMovement > 0 ? (
+              <span className="text-slate-500">
+                {money(String(passThroughMovement))} passed through accounts that net to zero
+              </span>
+            ) : undefined
+          }
         />
         <Stat
-          label="Total credits"
-          value={money(data.trialBalance.credit)}
+          label="Net position"
+          value={money(String(netAssets))}
+          hint={`Assets, after offsetting. Owed to members ${money(String(netLiabilities))}.`}
           icon={<Scale className="h-4 w-4" />}
+          tone={netAssets < 0 ? 'danger' : 'default'}
         />
         <Stat
           label="Difference"
@@ -238,13 +299,59 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
               header: 'Type',
               cell: (row) => <Badge tone="slate">{ACCOUNT_TYPE_LABELS[row.type]}</Badge>,
             },
-            { key: 'debit', header: 'Debit', align: 'right', cell: (row) => money(row.debit) },
-            { key: 'credit', header: 'Credit', align: 'right', cell: (row) => money(row.credit) },
+            {
+              key: 'debit',
+              header: 'Debit',
+              align: 'right',
+              // Dimmed when it nets to nothing: the figure is real movement
+              // but contributes nothing to the position, and showing it at
+              // full weight is what makes the totals look inexplicable.
+              cell: (row) => (
+                <span className={isZeroMoney(row.balance) ? 'text-slate-400' : undefined}>
+                  {money(row.debit)}
+                </span>
+              ),
+            },
+            {
+              key: 'credit',
+              header: 'Credit',
+              align: 'right',
+              cell: (row) => (
+                <span className={isZeroMoney(row.balance) ? 'text-slate-400' : undefined}>
+                  {money(row.credit)}
+                </span>
+              ),
+            },
             {
               key: 'balance',
               header: 'Balance',
               align: 'right',
-              cell: (row) => <span className="font-semibold text-navy-900">{money(row.balance)}</span>,
+              cell: (row) => {
+                const zero = isZeroMoney(row.balance);
+                const wrongSide = Number(row.balance) < 0;
+                return (
+                  <span
+                    className={
+                      wrongSide
+                        ? 'font-semibold text-red-600'
+                        : zero
+                          ? 'text-slate-400'
+                          : 'font-semibold text-navy-900'
+                    }
+                    // A balance on the wrong side of its own account class is
+                    // a real signal, not a formatting quirk.
+                    title={
+                      wrongSide
+                        ? `Negative for a ${ACCOUNT_TYPE_LABELS[row.type]} account — worth investigating`
+                        : zero
+                          ? 'Nets to zero — money passed through, or an entry was reversed'
+                          : undefined
+                    }
+                  >
+                    {money(row.balance)}
+                  </span>
+                );
+              },
             },
           ]}
           mobile={(row: Row) => (

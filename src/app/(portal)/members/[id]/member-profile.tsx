@@ -2,7 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CalendarCheck, HandCoins, PiggyBank, RefreshCw, Scale } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowLeft,
+  ArrowUpRight,
+  CalendarCheck,
+  Download,
+  HandCoins,
+  PiggyBank,
+  RefreshCw,
+  Scale,
+} from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -17,9 +27,20 @@ import {
 } from '@/components/ui';
 import { date, humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
+import { downloadCsv } from '@/lib/csv';
 import type { MemberDetail } from '@/types';
 
 type Tab = 'overview' | 'savings' | 'ajo' | 'loans' | 'conduct';
+
+function savingsStatusTone(status: string): 'green' | 'amber' | 'slate' {
+  if (status === 'ACTIVE') return 'green';
+  if (status === 'DORMANT') return 'amber';
+  return 'slate';
+}
+
+function isSavingsDebit(type: string) {
+  return type === 'WITHDRAWAL';
+}
 
 export function MemberProfile({ member }: { member: MemberDetail }) {
   const [tab, setTab] = useState<Tab>('overview');
@@ -144,7 +165,47 @@ export function MemberProfile({ member }: { member: MemberDetail }) {
 
         {tab === 'savings' && (
           <Card>
-            <CardHeader title="Savings accounts" />
+            <CardHeader
+              title="Savings accounts"
+              subtitle={
+                member.savingsAccounts.length === 0
+                  ? 'This member has no savings account yet'
+                  : `${member.savingsAccounts.length} account${member.savingsAccounts.length === 1 ? '' : 's'} held with the community`
+              }
+              action={
+                member.savingsAccounts.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadCsv(
+                          `${member.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-savings.csv`,
+                          member.savingsAccounts.flatMap((account) =>
+                            account.recent.map((entry) => ({
+                              Account: account.accountNumber,
+                              Product: account.product,
+                              Date: date(entry.at, 'datetime'),
+                              Type: humanise(entry.type),
+                              Amount: money(entry.amount),
+                              'Balance after': money(entry.balanceAfter),
+                            })),
+                          ),
+                        )
+                      }
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-navy-800 transition hover:bg-slate-50"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export CSV
+                    </button>
+                    <div className="rounded-lg bg-brand-50 px-3 py-1.5 text-right">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-brand-700">
+                        Total saved
+                      </p>
+                      <p className="tnum text-sm font-semibold text-navy-900">{money(savingsTotal)}</p>
+                    </div>
+                  </div>
+                ) : null
+              }
+            />
             {member.savingsAccounts.length === 0 ? (
               <EmptyState
                 compact
@@ -153,34 +214,94 @@ export function MemberProfile({ member }: { member: MemberDetail }) {
                 body="Open one from the Savings screen."
               />
             ) : (
-              member.savingsAccounts.map((a) => (
-                <div key={a.id} className="border-b border-slate-100 px-5 py-4 last:border-0">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-navy-900">{a.product}</p>
-                      <p className="text-xs text-slate-500">{a.accountNumber}</p>
-                    </div>
-                    <span className="tnum text-base font-semibold text-navy-900">
-                      {money(a.balance)}
-                    </span>
-                  </div>
-                  {a.recent.length > 0 && (
-                    <ul className="mt-3 space-y-1">
-                      {a.recent.slice(0, 5).map((t) => (
-                        <li
-                          key={t.id}
-                          className="flex items-center justify-between text-[13px] text-slate-600"
-                        >
-                          <span>
-                            {humanise(t.type)} · {date(t.at)}
+              <div className="space-y-4 p-4 sm:p-5">
+                {member.savingsAccounts.map((a) => (
+                  <section
+                    key={a.id}
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+                    aria-label={`${a.product} savings account`}
+                  >
+                    <div className="bg-gradient-to-br from-navy-900 to-navy-800 px-4 py-4 sm:px-5">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-gold-400 ring-1 ring-inset ring-white/10">
+                            <PiggyBank className="h-5 w-5" />
                           </span>
-                          <span className="tnum">{money(t.amount)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-white">{a.product}</p>
+                            <p className="mt-0.5 text-xs text-slate-300">{a.accountNumber}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3 sm:gap-5">
+                          <Badge tone={savingsStatusTone(a.status)} dot>
+                            {humanise(a.status)}
+                          </Badge>
+                          <div className="text-right">
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-300">
+                              Available balance
+                            </p>
+                            <p className="tnum mt-0.5 text-xl font-semibold tracking-tight text-white">
+                              {money(a.balance)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3 sm:px-5">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Recent activity
+                        </p>
+                        {a.recent.length > 0 && (
+                          <p className="text-xs text-slate-400">Latest {Math.min(a.recent.length, 5)} entries</p>
+                        )}
+                      </div>
+                      {a.recent.length === 0 ? (
+                        <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-[13px] text-slate-500">
+                          No entries have been recorded for this account yet.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-slate-100">
+                          {a.recent.slice(0, 5).map((t) => {
+                            const debit = isSavingsDebit(t.type);
+                            return (
+                              <li key={t.id} className="flex items-center gap-3 py-3 first:pt-1">
+                                <span
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                                    debit
+                                      ? 'bg-red-50 text-red-600'
+                                      : 'bg-emerald-50 text-emerald-600'
+                                  }`}
+                                >
+                                  {debit ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[13px] font-medium text-navy-900">
+                                    {humanise(t.type)}
+                                  </span>
+                                  <span className="block text-xs text-slate-500">{date(t.at, 'datetime')}</span>
+                                </span>
+                                <span className="text-right">
+                                  <span
+                                    className={`tnum block text-[13px] font-semibold ${
+                                      debit ? 'text-red-700' : 'text-emerald-700'
+                                    }`}
+                                  >
+                                    {debit ? '−' : '+'}{money(t.amount)}
+                                  </span>
+                                  <span className="tnum block text-xs text-slate-500">
+                                    Balance {money(t.balanceAfter)}
+                                  </span>
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
             )}
           </Card>
         )}

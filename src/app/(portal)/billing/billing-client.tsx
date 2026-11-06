@@ -162,9 +162,18 @@ export function BillingClient({
                     <Feature>
                       {p.maxAjoGroups ? `${p.maxAjoGroups} Ajo groups` : 'Unlimited Ajo groups'}
                     </Feature>
-                    {p.features.map((f) => (
-                      <Feature key={f}>{humanise(f)}</Feature>
+                    {p.trialDays > 0 && (
+                      <Feature>{p.trialDays}-day free trial</Feature>
+                    )}
+                    {/* The catalogue's own label and description, not a
+                        de-underscored slug. The description is the title so
+                        hovering explains a bullet without crowding the card. */}
+                    {p.featureDetails.map((f) => (
+                      <Feature key={f.slug}>
+                        <span title={f.description}>{f.label}</span>
+                      </Feature>
                     ))}
+                    {p.allowsApiAccess && <Feature>API access</Feature>}
                   </ul>
 
                   <Button

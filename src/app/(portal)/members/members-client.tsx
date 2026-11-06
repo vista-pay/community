@@ -92,7 +92,7 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
     },
     {
       key: 'contributions',
-      header: 'Contributed',
+      header: 'Contributions',
       align: 'right',
       hideOnMobile: true,
       cell: (m) => <span className="tnum">{money(m.contributions)}</span>,

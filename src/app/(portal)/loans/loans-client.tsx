@@ -15,6 +15,7 @@ import {
   Field,
   Input,
   KV,
+  LinkButton,
   Modal,
   PageHeader,
   Select,
@@ -58,8 +59,6 @@ export function LoansClient({
   const communityId = useCommunityId();
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('applications');
-  const [productOpen, setProductOpen] = useState(false);
-  const [quoting, setQuoting] = useState<LoanProduct | null>(null);
   const [deciding, setDeciding] = useState<{ loan: Loan; approve: boolean } | null>(null);
   const [viewing, setViewing] = useState<Loan | null>(null);
 
@@ -122,9 +121,7 @@ export function LoansClient({
         subtitle="Review member applications, guarantors, affordability, and lending terms"
         actions={
           tab === 'products' ? (
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setProductOpen(true)}>
-              New product
-            </Button>
+            <LinkButton href={'/loans/new' as never} icon={<Plus className="h-4 w-4" />}>New product</LinkButton>
           ) : null
         }
       />
@@ -252,7 +249,7 @@ export function LoansClient({
                   icon={<Package className="h-5 w-5" />}
                   title="No loan products"
                   body="A product fixes the rate, the tenors and who has to approve, so applications are judged against written terms."
-                  action={<Button onClick={() => setProductOpen(true)}>Create a product</Button>}
+                  action={<LinkButton href={'/loans/new' as never}>Create a product</LinkButton>}
                 />
               </Card>
             ) : (
@@ -282,9 +279,7 @@ export function LoansClient({
                     </ul>
                   )}
                   <div className="border-t border-slate-100 px-5 py-3">
-                    <Button size="sm" variant="secondary" onClick={() => setQuoting(p)}>
-                      Quote a loan
-                    </Button>
+                    <LinkButton size="sm" variant="secondary" href={`/loans/quote/${p.id}` as never}>Quote a loan</LinkButton>
                   </div>
                 </Card>
               ))
@@ -292,15 +287,6 @@ export function LoansClient({
           </div>
         )}
       </div>
-
-      <ProductModal
-        open={productOpen}
-        onClose={() => setProductOpen(false)}
-        communityId={communityId}
-        onDone={products.refresh}
-      />
-
-      <QuoteModal product={quoting} communityId={communityId} onClose={() => setQuoting(null)} />
 
       {viewing && (
         <LoanDetailModal
@@ -347,7 +333,7 @@ export function LoansClient({
   );
 }
 
-function ProductModal({
+export function ProductModal({
   open,
   onClose,
   communityId,
@@ -488,7 +474,7 @@ function ProductModal({
   );
 }
 
-function QuoteModal({
+export function QuoteModal({
   product,
   communityId,
   onClose,

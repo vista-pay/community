@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { LinkButton } from '@/components/ui';
 import {
   CalendarDays,
   CheckCircle2,
@@ -88,9 +89,7 @@ export function GovernanceClient({ initial }: { initial: Initial }) {
         subtitle="Meetings, ballots, the document shelf and member conduct"
         actions={
           tab === 'meetings' ? (
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setMeetingOpen(true)}>
-              Schedule meeting
-            </Button>
+            <LinkButton href={'/governance/meetings/new' as never} icon={<Plus className="h-4 w-4" />}>Schedule meeting</LinkButton>
           ) : tab === 'votes' ? (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => setPollOpen(true)}>
               Open a ballot
@@ -140,12 +139,6 @@ export function GovernanceClient({ initial }: { initial: Initial }) {
         <FinesTab fines={fines.data ?? []} communityId={communityId} onChanged={fines.refresh} />
       )}
 
-      <MeetingModal
-        open={meetingOpen}
-        onClose={() => setMeetingOpen(false)}
-        communityId={communityId}
-        onCreated={meetings.refresh}
-      />
       <PollModal
         open={pollOpen}
         onClose={() => setPollOpen(false)}
@@ -280,6 +273,7 @@ function MeetingsTab({
                 Minutes {m.minutesStatus.toLowerCase()}
               </Badge>
               <div className="flex-1" />
+              <LinkButton size="sm" variant="secondary" href={`/governance/meetings/${m.id}` as never}>View & edit</LinkButton>
               <Button size="sm" variant="secondary" onClick={() => setAttendanceFor(m)}>
                 Attendance
               </Button>

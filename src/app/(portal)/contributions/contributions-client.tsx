@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Check, Plus, RefreshCw, UserPlus, Users } from 'lucide-react';
+import type { Route } from 'next';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, CalendarDays, Check, Plus, RefreshCw, UserPlus, Users } from 'lucide-react';
 import {
   AmountInput,
   Badge,
@@ -31,8 +33,11 @@ import { InviteButton } from '@/components/ajo/invite-panel';
 
 export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] }) {
   const { community } = useSession();
-  const [creating, setCreating] = useState(false);
   const [reviewingGroup, setReviewingGroup] = useState<CommunityGroupRow | null>(null);
+  const [query, setQuery] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [status, setStatus] = useState('all');
 
   const { data, refresh } = useQuery<CommunityGroupRow[]>(
     () => portalApi.communityAjoGroups(community!.id),
@@ -42,6 +47,16 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
 
   const groups = data ?? [];
   const active = groups.filter((g) => g.status === 'ACTIVE');
+  const visibleGroups = groups.filter((group) => {
+    const start = group.startDate.slice(0, 10);
+    return (
+      (!query.trim() || group.name.toLowerCase().includes(query.trim().toLowerCase())) &&
+      (status === 'all' || group.status === status) &&
+      (!fromDate || start >= fromDate) &&
+      (!toDate || start <= toDate)
+    );
+  });
+  const statuses = [...new Set(groups.map((group) => group.status))];
   const perRound = sumMoney(
     active.map((g) => String(Number(g.contributionAmount) * g.memberCount)),
   );
@@ -52,9 +67,7 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
         title="Contributions & Ajo"
         subtitle="Rotating savings groups this community runs"
         actions={
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>
-            New Ajo group
-          </Button>
+          <Link href={'/contributions/new' as Route}><Button icon={<Plus className="h-4 w-4" />}>New Ajo group</Button></Link>
         }
       />
 
@@ -75,11 +88,28 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
               icon={<RefreshCw className="h-5 w-5" />}
               title="No Ajo groups yet"
               body="Create a rotating savings group and invite members to contribute each round."
-              action={<Button onClick={() => setCreating(true)}>Create a group</Button>}
+              action={<Link href={'/contributions/new' as Route}><Button>Create a group</Button></Link>}
             />
           </Card>
         ) : (
-          groups.map((g) => (
+          <>
+            <Card className="lg:col-span-2">
+              <div className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_10rem_10rem_10rem]">
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Ajo groups" aria-label="Search Ajo groups" />
+                <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} aria-label="Groups starting from" />
+                <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} aria-label="Groups starting until" />
+                <Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter groups by status">
+                  <option value="all">All statuses</option>
+                  {statuses.map((value) => <option key={value} value={value}>{humanise(value)}</option>)}
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
+                <CalendarDays className="h-3.5 w-3.5" /> Dates filter by each group&apos;s start date · {visibleGroups.length} shown
+              </div>
+            </Card>
+            {visibleGroups.length === 0 ? (
+              <Card className="lg:col-span-2"><EmptyState compact title="No groups match these filters" body="Try a different name, status, or date range." /></Card>
+            ) : visibleGroups.map((g) => (
             <Card key={g.groupId}>
               <Link
                 href={`/contributions/${g.groupId}`}
@@ -139,16 +169,10 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
                 )}
               </div>
             </Card>
-          ))
+            ))}
+          </>
         )}
       </div>
-
-      <CreateGroupModal
-        open={creating}
-        onClose={() => setCreating(false)}
-        communityId={community!.id}
-        onCreated={refresh}
-      />
 
       {reviewingGroup && (
         <JoinRequestsModal
@@ -186,17 +210,9 @@ const SELECTION_MODES = [
   },
 ] as const;
 
-function CreateGroupModal({
-  open,
-  onClose,
-  communityId,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  communityId: string;
-  onCreated: () => Promise<void>;
-}) {
+export function CreateGroupForm() {
+  const { community } = useSession();
+  const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -208,6 +224,10 @@ function CreateGroupModal({
   const [payoutSelectionMode, setPayoutSelectionMode] = useState<string>('RANDOM_DRAW');
   const [selectionDeadline, setSelectionDeadline] = useState('');
   const [rules, setRules] = useState(DEFAULT_RULES);
+  const [feeModel, setFeeModel] = useState<'FREE' | 'CONTRIBUTION_MARKUP' | 'PAYOUT_DEDUCTION'>('FREE');
+  const [feePercent, setFeePercent] = useState('');
+  const [lateFeePercent, setLateFeePercent] = useState('');
+  const [postPayoutLateFeePercent, setPostPayoutLateFeePercent] = useState('');
 
   const create = useMutation(
     () =>
@@ -218,7 +238,7 @@ function CreateGroupModal({
         // what makes its pool and fees the cooperative's rather than a
         // single organiser's.
         type: 'COOPERATIVE',
-        communityId,
+        communityId: community!.id,
         contributionAmount,
         currencyCode: 'NGN',
         frequency,
@@ -233,6 +253,13 @@ function CreateGroupModal({
         ...(payoutSelectionMode === 'MEMBER_SELECTED' && selectionDeadline
           ? { selectionDeadline: new Date(`${selectionDeadline}T00:00:00.000Z`).toISOString() }
           : {}),
+        communityFeePolicy: {
+          model: feeModel,
+          feePercent: feeModel === 'FREE' ? '0' : feePercent,
+          lateFeePercent: lateFeePercent || '0',
+          postPayoutLateFeePercent: postPayoutLateFeePercent || '0',
+          revenueRecipient: 'COMMUNITY',
+        },
         rules,
       }),
     {
@@ -242,8 +269,7 @@ function CreateGroupModal({
         setDescription('');
         setContributionAmount('');
         setStartDate('');
-        onClose();
-        await onCreated();
+        router.push('/contributions' as Route);
       },
       onError: (message) => toast('Could not create the group', 'error', message),
     },
@@ -254,30 +280,20 @@ function CreateGroupModal({
     Number(contributionAmount) > 0 &&
     Number(memberLimit) >= 2 &&
     Boolean(startDate) &&
+    (feeModel === 'FREE' || (Number(feePercent) > 0 && Number(feePercent) <= 100)) &&
+    Number(lateFeePercent || 0) >= 0 && Number(lateFeePercent || 0) <= 100 &&
+    Number(postPayoutLateFeePercent || 0) >= Number(lateFeePercent || 0) && Number(postPayoutLateFeePercent || 0) <= 100 &&
     Object.values(rules).every((r) => r.trim().length > 0);
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title="New Ajo group"
-      description="Members see these terms before they can join, so they cannot be changed once a cycle is running."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!valid} loading={create.pending} onClick={() => void create.run()}>
-            Create group
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
+    <>
+      <PageHeader title="Create a new Ajo group" subtitle="Take your time. Set how members contribute, how payouts work, and the rules everyone will see." breadcrumb={<Link href="/contributions" className="text-base hover:text-navy-900">Contributions & Ajo</Link>} actions={<Link href="/contributions"><Button variant="secondary" size="lg">Cancel</Button></Link>} />
+      <div className="mx-auto max-w-4xl space-y-6 [&_.input]:min-h-12 [&_.input]:text-base [&_.label]:text-base [&_.label]:font-semibold [&_textarea]:text-base">
+      <Card className="p-5 sm:p-8"><div className="space-y-7">
         {create.error && <Callout tone="danger">{create.error}</Callout>}
 
-        <Field label="Name" htmlFor="ag-name" required>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-5 sm:p-6"><div className="mb-5"><h2 className="text-lg font-semibold text-navy-900">1. Name your group</h2><p className="mt-1 text-base leading-relaxed text-slate-600">Use a name members will recognise easily.</p></div>
+        <Field label="Group name" htmlFor="ag-name" required>
           <Input
             id="ag-name"
             value={name}
@@ -286,7 +302,7 @@ function CreateGroupModal({
           />
         </Field>
 
-        <Field label="Description" htmlFor="ag-desc" optional>
+        <Field label="Short description" htmlFor="ag-desc" optional>
           <Textarea
             id="ag-desc"
             rows={2}
@@ -294,9 +310,9 @@ function CreateGroupModal({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Who this group is for"
           />
-        </Field>
+        </Field></div>
 
-        <div className={`grid gap-4 ${frequency === 'CUSTOM' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6"><div className="mb-5"><h2 className="text-lg font-semibold text-navy-900">2. Set the contribution</h2><p className="mt-1 text-base leading-relaxed text-slate-600">Choose what each member pays and how often.</p></div><div className={`grid gap-5 ${frequency === 'CUSTOM' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
           <Field label="Amount per round" htmlFor="ag-amount" required>
             <AmountInput
               id="ag-amount"
@@ -328,7 +344,7 @@ function CreateGroupModal({
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <Field label="Members" htmlFor="ag-limit" required hint="One payout turn each">
             <Input
               id="ag-limit"
@@ -352,10 +368,11 @@ function CreateGroupModal({
               onChange={(e) => setStartDate(e.target.value)}
             />
           </Field>
-        </div>
+        </div></div>
 
-        <div>
-          <p className="label">How the payout order is decided</p>
+        <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-5 sm:p-6">
+          <h2 className="text-lg font-semibold text-navy-900">3. Choose the payout order</h2>
+          <p className="mb-4 mt-1 text-base leading-relaxed text-slate-600">Tell members clearly how their payout position will be decided.</p>
           <div className="grid gap-2">
             {SELECTION_MODES.map((m) => (
               <RadioCard
@@ -364,6 +381,7 @@ function CreateGroupModal({
                 onSelect={() => setPayoutSelectionMode(m.value)}
                 title={m.label}
                 description={m.hint}
+                className="p-5 [&_span]:text-base [&_span>span:last-child]:text-[15px]"
               />
             ))}
           </div>
@@ -385,9 +403,25 @@ function CreateGroupModal({
           </Field>
         )}
 
-        <div>
-          <p className="label">Rules</p>
-          <p className="mb-2 text-xs text-slate-500">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5 sm:p-6">
+          <h2 className="text-lg font-semibold text-navy-900">4. Community charges and late payments</h2>
+          <p className="mb-4 mt-1 text-base leading-relaxed text-slate-700">Members will see this policy before joining and must accept it. All charges are community revenue.</p>
+          <div className="grid gap-2">
+            <RadioCard selected={feeModel === 'FREE'} onSelect={() => setFeeModel('FREE')} title="Run this group free" description="Members pay only their contribution; the full collected pool is available for payout." className="p-5 [&_span]:text-base [&_span>span:last-child]:text-[15px]" />
+            <RadioCard selected={feeModel === 'CONTRIBUTION_MARKUP'} onSelect={() => setFeeModel('CONTRIBUTION_MARKUP')} title="Add a charge to each contribution" description="For example, 0.5% makes a ₦1,000 contribution cost ₦1,005. The charge is community revenue." className="p-5 [&_span]:text-base [&_span>span:last-child]:text-[15px]" />
+            <RadioCard selected={feeModel === 'PAYOUT_DEDUCTION'} onSelect={() => setFeeModel('PAYOUT_DEDUCTION')} title="Deduct a charge from each payout" description="Members pay the contribution amount; the community charge is deducted from the round payout." className="p-5 [&_span]:text-base [&_span>span:last-child]:text-[15px]" />
+          </div>
+          {feeModel !== 'FREE' && <div className="mt-3"><Field label={feeModel === 'CONTRIBUTION_MARKUP' ? 'Contribution charge' : 'Payout deduction'} htmlFor="ag-fee" required><Input id="ag-fee" value={feePercent} onChange={(e) => setFeePercent(e.target.value)} inputMode="decimal" suffix="%" placeholder="0.5" /></Field></div>}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Late-payment charge" htmlFor="ag-late" hint="Percentage of the contribution, after its deadline."><Input id="ag-late" value={lateFeePercent} onChange={(e) => setLateFeePercent(e.target.value)} inputMode="decimal" suffix="%" placeholder="0" /></Field>
+            <Field label="Late charge after payout" htmlFor="ag-late-paid" hint="Higher rate for a member who has already received a payout."><Input id="ag-late-paid" value={postPayoutLateFeePercent} onChange={(e) => setPostPayoutLateFeePercent(e.target.value)} inputMode="decimal" suffix="%" placeholder="0" /></Field>
+          </div>
+          {feeModel !== 'FREE' || Number(lateFeePercent) > 0 ? <Callout tone="info" className="mt-3">{feeModel === 'CONTRIBUTION_MARKUP' ? `Each member pays their contribution plus ${feePercent || '0'}%.` : feeModel === 'PAYOUT_DEDUCTION' ? `${feePercent || '0'}% is deducted from each round payout.` : 'No community charge is added to standard contributions.'} Late charges are community revenue{Number(postPayoutLateFeePercent) > 0 ? ` and rise to ${postPayoutLateFeePercent}% after payout` : ''}.</Callout> : null}
+        </div>
+
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 sm:p-6">
+          <h2 className="text-lg font-semibold text-navy-900">5. Member rules</h2>
+          <p className="mb-4 mt-1 text-base leading-relaxed text-slate-600">
             Every member reads these and accepts them before joining. Edit them to match what
             your group actually agreed.
           </p>
@@ -418,8 +452,10 @@ function CreateGroupModal({
             </Field>
           </div>
         </div>
+      </div></Card>
+      <div className="sticky bottom-3 flex flex-wrap justify-end gap-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur"><Link href="/contributions"><Button variant="secondary" size="lg">Cancel</Button></Link><Button size="lg" disabled={!valid} loading={create.pending} onClick={() => void create.run()}>Create group</Button></div>
       </div>
-    </Modal>
+    </>
   );
 }
 

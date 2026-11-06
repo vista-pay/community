@@ -7,14 +7,22 @@ import { ApiError } from '@/lib/api';
 import { useToast } from '@/components/providers/toast-provider';
 import { money } from '@/lib/format';
 
-/** Discriminator the API sets on the 428 that asks for the owner's code. */
+/**
+ * Discriminator the API sets on the 428 that asks for the owner's code.
+ *
+ * The name is the server's and now covers configuration changes as well as
+ * money out — the mechanism is the same, only the binding differs.
+ */
 const MONEY_OUT_OTP_REQUIRED = 'MONEY_OUT_OTP_REQUIRED';
 
 export interface MoneyOutChallenge {
   challengeId: string;
   action: string;
-  amount: string;
-  currencyCode: string;
+  /** Present for money-out actions; a configuration change has no amount. */
+  amount: string | null;
+  currencyCode: string | null;
+  /** Present for configuration changes: the one line the owner was shown. */
+  summary: string | null;
   /** Masked, e.g. `o***r@unity.coop`. */
   sentTo: string;
   channel: 'EMAIL' | 'PHONE';
@@ -35,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   WELFARE_DISBURSEMENT: 'Pay this welfare request',
   CONTRIBUTION_PAYOUT: 'Release this contribution payout',
   WALLET_WITHDRAWAL: 'Send this withdrawal to a bank account',
+  JOURNAL_REVERSAL: 'Approve this manual journal reversal',
 };
 
 /** Reads the challenge out of an error, or null if it is a different error. */
@@ -171,7 +180,7 @@ export function MoneyOutOtpDialog({ gate }: { gate: AnyMoneyOutGate }) {
           Owner approval required
         </span>
       }
-      description="Money leaving the community needs a code from the community owner."
+      description="Changes to the community's money or its terms need a code from the community owner."
       size="sm"
       footer={
         <>
@@ -192,11 +201,20 @@ export function MoneyOutOtpDialog({ gate }: { gate: AnyMoneyOutGate }) {
         <div className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-[13px] font-semibold text-navy-900">
-              {ACTION_LABELS[challenge.action] ?? 'Release this payment'}
+              {ACTION_LABELS[challenge.action] ?? 'Approve this change'}
             </p>
-            <p className="tnum mt-1 text-[22px] font-bold tracking-tight text-navy-900">
-              {money(challenge.amount, challenge.currencyCode)}
-            </p>
+            {/* An amount for a payout, the summary for a configuration change.
+                Whichever it is, the owner has to see WHAT they approved — a
+                bare code prompt teaches people to approve anything. */}
+            {challenge.amount && challenge.currencyCode ? (
+              <p className="tnum mt-1 text-[22px] font-bold tracking-tight text-navy-900">
+                {money(challenge.amount, challenge.currencyCode)}
+              </p>
+            ) : (
+              <p className="mt-1 text-[15px] font-semibold leading-snug text-navy-900">
+                {challenge.summary}
+              </p>
+            )}
             <p className="mt-1 text-xs text-slate-500">
               Code sent to the community owner at{' '}
               <span className="font-medium text-slate-700">{challenge.sentTo}</span>

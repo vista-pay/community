@@ -146,6 +146,7 @@ export interface DashboardData {
     merchantInvoices: number;
     merchantApiKeys: number;
     merchantWebhooks: number;
+    configuration: number;
   };
   upcomingMeeting: { id: string; title: string; scheduledFor: IsoDate; venue: string } | null;
   subscription: { id: string; plan: string; status: string; renewsAt: IsoDate | null } | null;
@@ -909,7 +910,20 @@ export interface SubscriptionPlan {
   maxMembers: number | null;
   maxStaffSeats: number | null;
   maxAjoGroups: number | null;
+  /** Raw catalogue slugs. Prefer `featureDetails` for anything user-facing. */
   features: string[];
+  /**
+   * The same features with the catalogue's own wording, resolved server-side
+   * so this app holds no copy of the slug list.
+   */
+  featureDetails: Array<{
+    slug: string;
+    label: string;
+    description: string;
+    group: string;
+  }>;
+  trialDays: number;
+  allowsApiAccess: boolean;
   isActive: boolean;
 }
 
@@ -1049,6 +1063,7 @@ export interface CommunityGroupRow {
   startDate: IsoDate;
   payoutSelectionMode: string;
   rulesVersion: number;
+  communityFeePolicy: { model: 'FREE' | 'CONTRIBUTION_MARKUP' | 'PAYOUT_DEDUCTION'; feePercent: string; lateFeePercent: string; postPayoutLateFeePercent: string; revenueRecipient: 'COMMUNITY' } | null;
   isOpen: boolean;
   myStatus: string | null;
   invitationCode?: string;
@@ -1193,6 +1208,7 @@ export interface MerchantInvoice {
   totalAmount: string;
   currencyCode: string;
   status: string;
+  issueDate: string;
   dueDate: string;
   createdAt: string;
   paidAt: string | null;
@@ -1203,6 +1219,7 @@ export interface MerchantInvoiceDetail extends MerchantInvoice {
   merchantName: string | null;
   merchantEmail: string | null;
   linkHash: string | null;
+  paymentUrl: string | null;
 }
 
 export interface MerchantApiKey {
@@ -1238,4 +1255,75 @@ export interface MerchantWebhookCreated {
   url: string;
   events: string[];
   signingSecret: string;
+}
+
+// ───────────────────────── Community configuration ─────────────────────────
+//
+// One screen for everything that decides what members are charged or who
+// qualifies. Every save on it needs the community owner's approval code: the
+// API answers 428 with a challenge and the request is re-sent with the code.
+
+export interface ConfigLoanProduct {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  currencyCode: string;
+  interestRate: string;
+  processingFeePercent: string;
+  minPrincipal: string;
+  maxPrincipal: string;
+  tenorMonths: number;
+}
+
+export interface ConfigSavingsProduct {
+  id: string;
+  name: string;
+  description: string | null;
+  interestRate: string;
+  minBalance: string;
+  withdrawalPolicy: 'ANYTIME' | 'NOTICE' | 'LOCKED';
+  noticeDays: number;
+  isActive: boolean;
+}
+
+export interface ConfigOrganizerFee {
+  ajoGroupId: string;
+  name: string;
+  status: string;
+  enabled: boolean;
+  feeType: string | null;
+  value: string | null;
+}
+
+export interface ConfigServicePolicy {
+  id: string;
+  area: 'JOINING' | 'CONTRIBUTIONS' | 'SAVINGS' | 'LOANS';
+  content: string;
+  rules: Record<string, string | number | boolean>;
+  isPublished: boolean;
+  version: number;
+}
+
+export interface CommunityConfiguration {
+  community: { id: string; name: string; status: string; organizerFeesEnabled: boolean };
+  requiresOwnerApproval: boolean;
+  feesAndRates: {
+    requiresOwnerApproval: boolean;
+    loanProducts: ConfigLoanProduct[];
+    savingsProducts: ConfigSavingsProduct[];
+    organizerFees: ConfigOrganizerFee[];
+    /** A platform admin must authorise organizer fees before one can be set. */
+    organizerFeesAuthorised: boolean;
+  };
+  servicePolicies: {
+    requiresOwnerApproval: boolean;
+    policies: ConfigServicePolicy[];
+  };
+  merchantAndPayouts: {
+    requiresOwnerApproval: boolean;
+    settlementAccounts: MerchantSettlementAccount[];
+    /** False today: no community payout path consumes these accounts yet. */
+    payoutsWired: boolean;
+  };
 }

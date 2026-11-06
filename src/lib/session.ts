@@ -101,32 +101,80 @@ export async function setActiveCommunityId(communityId: string) {
 }
 
 /**
- * Exchanges the refresh token for a new pair. Returns null when the refresh
- * token is itself dead, which is the signal to send the officer to sign in.
+ * The outcome of trying to refresh.
+ *
+ * Three states, not two. A single null conflated "your refresh token is
+ * invalid" with "I could not reach the API", and the caller could only treat
+ * both as a dead session — so a momentary API hiccup signed the officer out
+ * of a session that was perfectly valid. Only `rejected` means sign out.
  */
-export async function refreshSession(): Promise<string | null> {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) return null;
+export type RefreshResult =
+  | { status: 'refreshed'; accessToken: string }
+  /** The API answered, and the refresh token is genuinely no longer good. */
+  | { status: 'rejected'; reason: string }
+  /** The API could not be asked, or failed. The session is still fine. */
+  | { status: 'unavailable'; reason: string };
 
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-    cache: 'no-store',
-  });
-  if (!res.ok) return null;
+/**
+ * Exchanges the refresh token for a new pair.
+ *
+ * Distinguishing a rejection from an outage is the whole point of the return
+ * type: an officer halfway through approving a payout should see "try again",
+ * not be thrown back to the sign-in page because the API restarted.
+ */
+export async function refreshSession(): Promise<RefreshResult> {
+  const refreshToken = await getRefreshToken();
+  // No refresh token at all is a genuine dead end — there is nothing to
+  // exchange, and retrying cannot produce one.
+  if (!refreshToken) return { status: 'rejected', reason: 'No refresh token' };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+      cache: 'no-store',
+      // A refresh that hangs must not hang the page behind it. Without this
+      // the request waits on the platform default, which is effectively
+      // forever for a server that accepted the connection and went quiet.
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (error) {
+    // Connection refused, DNS failure, timeout — the API is unreachable, and
+    // the session says nothing about that. Previously this threw out of the
+    // route handler and became a 500.
+    return {
+      status: 'unavailable',
+      reason: error instanceof Error ? error.message : 'Could not reach the API',
+    };
+  }
+
+  // Only the API's own "no" ends a session. 401/403 is the refresh token
+  // being rejected; anything else (500, 502, 429, a gateway page) is the API
+  // having a bad moment, and the officer keeps their session.
+  if (res.status === 401 || res.status === 403) {
+    return { status: 'rejected', reason: `Refresh rejected (${res.status})` };
+  }
+  if (!res.ok) {
+    return { status: 'unavailable', reason: `Refresh failed (${res.status})` };
+  }
 
   const json = await res.json().catch(() => null);
   const data = json?.data ?? json;
   // Same reason as the login route: refresh returns the pair flat, login
   // nests it under `tokens`.
   const tokens = data?.tokens ?? data;
-  if (!tokens?.accessToken) return null;
+  if (!tokens?.accessToken) {
+    // A 200 with no token is the API misbehaving, not the officer's session
+    // ending. Retrying is the right move.
+    return { status: 'unavailable', reason: 'Refresh returned no access token' };
+  }
 
   await writeSession({
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken ?? refreshToken,
     expiresIn: tokens.expiresIn,
   });
-  return tokens.accessToken as string;
+  return { status: 'refreshed', accessToken: tokens.accessToken as string };
 }

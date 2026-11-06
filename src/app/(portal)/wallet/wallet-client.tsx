@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownLeft, ArrowUpRight, Check, Copy, Landmark, ReceiptText, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Check, Copy, Download, Landmark, ReceiptText, Wallet } from 'lucide-react';
 import {
+  Button,
   Card,
   CardHeader,
   DataTable,
   EmptyState,
+  Input,
   PageHeader,
+  Select,
   Stat,
   StatusBadge,
 } from '@/components/ui';
@@ -17,6 +20,7 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
 import { isZeroMoney } from '@/lib/money';
+import { downloadCsv } from '@/lib/csv';
 import type { WalletData, WalletTransaction } from '@/types';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -41,10 +45,25 @@ export function WalletClient({ initial }: { initial: WalletData }) {
     initial,
   });
   const [copied, setCopied] = useState(false);
+  const [query, setQuery] = useState('');
+  const [direction, setDirection] = useState<'all' | 'in' | 'out'>('all');
+  const [status, setStatus] = useState('all');
 
   const d = data ?? initial;
   const ngn = d.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ?? d.wallet?.accounts[0];
   const depositAccount = d.wallet?.depositAccount ?? null;
+  const transactions = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return d.transactions.filter((transaction) => {
+      const haystack = `${typeLabel(transaction)} ${transaction.reference} ${transaction.counterparty ?? ''} ${transaction.narration ?? ''}`.toLowerCase();
+      return (
+        (!needle || haystack.includes(needle)) &&
+        (direction === 'all' || (direction === 'in' ? transaction.credit : !transaction.credit)) &&
+        (status === 'all' || transaction.status === status)
+      );
+    });
+  }, [d.transactions, direction, query, status]);
+  const statuses = [...new Set(d.transactions.map((transaction) => transaction.status))];
 
   function copyAccountNumber() {
     if (!depositAccount) return;
@@ -137,9 +156,44 @@ export function WalletClient({ initial }: { initial: WalletData }) {
         <CardHeader
           title="Transactions"
           subtitle="Every movement in or out of the community wallet"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Download className="h-3.5 w-3.5" />}
+              disabled={transactions.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  `community-wallet-${transactions.length === d.transactions.length ? 'all' : 'filtered'}-transactions.csv`,
+                  transactions.map((transaction) => ({
+                    Date: date(transaction.createdAt, 'datetime'),
+                    Transaction: typeLabel(transaction),
+                    Direction: transaction.credit ? 'In' : 'Out',
+                    Amount: money(transaction.amount, transaction.currencyCode),
+                    Status: humanise(transaction.status),
+                    Reference: transaction.reference,
+                    Counterparty: transaction.counterparty,
+                    Narration: transaction.narration,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </Button>
+          }
         />
+        <div className="grid gap-3 border-b border-slate-100 px-5 py-4 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search reference, type or counterparty" aria-label="Search wallet transactions" />
+          <Select value={direction} onChange={(event) => setDirection(event.target.value as 'all' | 'in' | 'out')} aria-label="Filter by direction">
+            <option value="all">All movements</option><option value="in">Money in</option><option value="out">Money out</option>
+          </Select>
+          <Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            {statuses.map((value) => <option key={value} value={value}>{humanise(value)}</option>)}
+          </Select>
+        </div>
         <DataTable
-          rows={d.transactions}
+          rows={transactions}
           rowKey={(t) => t.id}
           columns={[
             {
@@ -206,8 +260,8 @@ export function WalletClient({ initial }: { initial: WalletData }) {
           empty={
             <EmptyState
               icon={<ReceiptText className="h-5 w-5" />}
-              title="No transactions yet"
-              body="Dues, contributions and bank transfers into the deposit account will appear here."
+              title={d.transactions.length ? 'No matching transactions' : 'No transactions yet'}
+              body={d.transactions.length ? 'Try changing or clearing the filters.' : 'Dues, contributions and bank transfers into the deposit account will appear here.'}
             />
           }
         />

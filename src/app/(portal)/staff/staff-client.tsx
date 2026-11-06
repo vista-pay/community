@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Mail, ShieldCheck, UserCog, UserPlus } from 'lucide-react';
+import { Download, Mail, ShieldCheck, UserCog, UserPlus } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -14,6 +14,7 @@ import {
   EmptyState,
   Field,
   Input,
+  LinkButton,
   Modal,
   PageHeader,
   RadioCard,
@@ -40,7 +41,6 @@ export function StaffClient({
   const { user } = useSession();
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('staff');
-  const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<MemberRow | null>(null);
 
   const members = useQuery(() => portalApi.members(communityId, undefined, true), [communityId], {
@@ -83,9 +83,7 @@ export function StaffClient({
         title="Staff & roles"
         subtitle="Who can act on behalf of the community, and what they did"
         actions={
-          <Button icon={<UserPlus className="h-4 w-4" />} onClick={() => setAdding(true)}>
-            Add an officer
-          </Button>
+          <LinkButton href={'/staff/new' as never} icon={<UserPlus className="h-4 w-4" />}>Add an officer</LinkButton>
         }
       />
 
@@ -214,6 +212,7 @@ export function StaffClient({
           <CardHeader
             title="Audit log"
             subtitle="Every action that changed a record, and who took it"
+            action={<Button size="sm" variant="secondary" icon={<Download className="h-3.5 w-3.5" />} onClick={() => downloadAuditCsv(audit.data ?? [])}>Export CSV</Button>}
           />
           <DataTable
             rows={audit.data ?? []}
@@ -245,14 +244,6 @@ export function StaffClient({
         </Card>
       )}
 
-      <AddStaffModal
-        open={adding}
-        onClose={() => setAdding(false)}
-        communityId={communityId}
-        members={members.data ?? []}
-        onAdded={members.refresh}
-        onInvited={invitations.refresh}
-      />
 
       <ConfirmDialog
         open={Boolean(removing)}
@@ -273,7 +264,18 @@ export function StaffClient({
   );
 }
 
-function AddStaffModal({
+function downloadAuditCsv(rows: AuditEntry[]) {
+  const cell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+  const csv = [
+    ['When', 'Action', 'Record type', 'Reason', 'Actor'].map(cell).join(','),
+    ...rows.map((row) => [row.createdAt, row.action, row.entityType, row.reason, row.actorId].map(cell).join(',')),
+  ].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const anchor = Object.assign(document.createElement('a'), { href: url, download: `audit-log-${new Date().toISOString().slice(0, 10)}.csv` });
+  anchor.click(); URL.revokeObjectURL(url);
+}
+
+export function AddStaffModal({
   open,
   onClose,
   communityId,
