@@ -1327,3 +1327,32 @@ export interface CommunityConfiguration {
     payoutsWired: boolean;
   };
 }
+
+// ───────────────────────── Dues & levies ─────────────────────────
+
+export type LevyFrequency = 'ONE_OFF' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+
+export interface CommunityLevy {
+  id: string;
+  name: string;
+  description: string | null;
+  amount: Money;
+  frequency: LevyFrequency;
+  /** The on/off toggle. Off stops charging; what was collected stays. */
+  isActive: boolean;
+  startsOn: IsoDate;
+  endsOn: IsoDate | null;
+  createdAt: IsoDate;
+}
+
+export interface DuesLeviesOverview {
+  monthlyDues: Money | null;
+  /** "KAKA" — member codes read KAKA-261106-0001. */
+  memberCodePrefix: string | null;
+  /** How many codes have been issued; the prefix locks once above zero. */
+  membersIssued: number;
+  activeMembers: number;
+  levies: CommunityLevy[];
+  /** Dues plus every monthly levy — what an active member owes each month. */
+  monthlyTotalPerMember: Money;
+}

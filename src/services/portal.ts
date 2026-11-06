@@ -69,6 +69,9 @@ import type {
   MerchantWebhook,
   MerchantWebhookCreated,
   CommunityConfiguration,
+  CommunityLevy,
+  DuesLeviesOverview,
+  LevyFrequency,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -661,6 +664,47 @@ export const portalApi = {
     extra: MoneyOutExtra = {},
   ) =>
     patch<SavingsProduct>(path(communityId, `/portal/savings/products/${productId}`), {
+      ...body,
+      ...extra,
+    }),
+
+  // ───────────────────── Dues & levies ─────────────────────
+
+  duesLevies: (communityId: string) =>
+    get<DuesLeviesOverview>(path(communityId, '/dues-levies')),
+
+  setMonthlyDues: (communityId: string, amount: string | null, extra: MoneyOutExtra = {}) =>
+    patch<{ monthlyDues: string | null }>(path(communityId, '/dues-levies/monthly-dues'), {
+      amount,
+      ...extra,
+    }),
+
+  setMemberCodePrefix: (communityId: string, prefix: string, extra: MoneyOutExtra = {}) =>
+    patch<{ memberCodePrefix: string }>(path(communityId, '/dues-levies/member-code-prefix'), {
+      prefix,
+      ...extra,
+    }),
+
+  createLevy: (
+    communityId: string,
+    body: {
+      name: string;
+      description?: string;
+      amount: string;
+      frequency: LevyFrequency;
+      startsOn: string;
+      endsOn?: string;
+    },
+    extra: MoneyOutExtra = {},
+  ) => post<CommunityLevy>(path(communityId, '/dues-levies/levies'), { ...body, ...extra }),
+
+  updateLevy: (
+    communityId: string,
+    levyId: string,
+    body: Record<string, unknown>,
+    extra: MoneyOutExtra = {},
+  ) =>
+    patch<CommunityLevy>(path(communityId, `/dues-levies/levies/${levyId}`), {
       ...body,
       ...extra,
     }),
