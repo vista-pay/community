@@ -1,11 +1,18 @@
 import type { Metadata } from 'next';
-import { communityGet } from '@/server/portal-data';
-import type { JoinRequest } from '@/types';
-import { JoinRequestsClient } from './join-requests-client';
+import { communityGet, communityGetSafe } from '@/server/portal-data';
+import type { JoinRequest, PendingInvitation } from '@/types';
+import { PendingMembersClient } from './pending-members-client';
 
-export const metadata: Metadata = { title: 'Join requests' };
+export const metadata: Metadata = { title: 'Pending members' };
 
-export default async function JoinRequestsPage() {
-  const requests = await communityGet<JoinRequest[]>('/join-review');
-  return <JoinRequestsClient initial={requests} />;
+export default async function PendingMembersPage() {
+  // Applications are the page's reason to exist, so a failure there should
+  // surface. Invitations are the second tab — safe, so a hiccup there does
+  // not take the review queue down with it.
+  const [requests, invitations] = await Promise.all([
+    communityGet<JoinRequest[]>('/join-review'),
+    communityGetSafe<PendingInvitation[]>('/members/invitations'),
+  ]);
+
+  return <PendingMembersClient requests={requests} invitations={invitations ?? []} />;
 }

@@ -146,7 +146,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
               label="New members"
               value={metrics.newMembersLast30Days}
               hint="Last 30 days"
-              href="/members"
+              href="/members/all"
             />
             <PulseMetric
               icon={PiggyBank}

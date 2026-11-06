@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import type { Route } from 'next';
 import { Download, Search, UserPlus, Users } from 'lucide-react';
 import {
   Avatar,
@@ -58,7 +59,11 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
           <Avatar name={m.name} size="sm" />
           <span className="min-w-0">
             <span className="block truncate font-medium text-navy-900">{m.name}</span>
-            <span className="block truncate text-xs text-slate-500">{m.memberNumber}</span>
+            {/* The community's own code where it has one; the derived
+                number is only a fallback for members who predate it. */}
+            <span className="block truncate text-xs text-slate-500">
+              {m.memberCode ?? m.memberNumber}
+            </span>
           </span>
         </Link>
       ),
@@ -118,8 +123,13 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
   return (
     <>
       <PageHeader
-        title="Members"
+        title="Existing members"
         subtitle={`${members.length} on the register`}
+        breadcrumb={
+          <Link href={'/members' as Route} className="hover:text-navy-700">
+            Members
+          </Link>
+        }
         actions={
           <>
             <Button
@@ -129,7 +139,7 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
                 downloadCsv(
                   'members.csv',
                   rows.map((m) => ({
-                    'Member no': m.memberNumber,
+                    'Member code': m.memberCode ?? m.memberNumber,
                     Name: m.name,
                     Phone: m.phone,
                     Email: m.email,
@@ -145,8 +155,8 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
             >
               Export
             </Button>
-            <LinkButton href="/members/requests" icon={<UserPlus className="h-4 w-4" />}>
-              Join requests
+            <LinkButton href="/members/add" icon={<UserPlus className="h-4 w-4" />}>
+              Add new member
             </LinkButton>
           </>
         }

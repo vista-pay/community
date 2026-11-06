@@ -64,7 +64,7 @@ export function MemberProfile({ member }: { member: MemberDetail }) {
     <>
       <PageHeader
         breadcrumb={
-          <Link href="/members" className="inline-flex items-center gap-1 hover:text-navy-900">
+          <Link href="/members/all" className="inline-flex items-center gap-1 hover:text-navy-900">
             <ArrowLeft className="h-3.5 w-3.5" /> Members
           </Link>
         }

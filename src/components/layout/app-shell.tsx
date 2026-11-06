@@ -42,6 +42,13 @@ import {
   Users,
   Wallet as WalletIcon,
   X,
+  UserRoundCheck,
+  Package,
+  Inbox,
+  CheckCircle2,
+  Banknote,
+  Undo2,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
@@ -78,11 +85,35 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'Community',
     items: [
-      { href: '/members', label: 'Members', icon: Users, exact: true, countKey: 'members' },
-      { href: '/members/requests', label: 'Join requests', icon: UserPlus, countKey: 'joinRequests' },
+      {
+        href: '/members',
+        label: 'Members',
+        icon: Users,
+        exact: true,
+        countKey: 'members',
+        children: [
+          { href: '/members/add', label: 'Add new member', icon: UserPlus, countKey: 'members' },
+          { href: '/members/requests', label: 'Pending members', icon: UserRoundCheck, countKey: 'joinRequests' },
+          { href: '/members/all', label: 'Existing members', icon: Users, countKey: 'members' },
+        ],
+      },
       { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw, countKey: 'contributions' },
       { href: '/savings', label: 'Savings', icon: PiggyBank, countKey: 'savings' },
-      { href: '/loans', label: 'Loans', icon: HandCoins, countKey: 'loans' },
+      {
+        href: '/loans',
+        label: 'Loans',
+        icon: HandCoins,
+        exact: true,
+        countKey: 'loans',
+        children: [
+          { href: '/loans/offers', label: 'Loan offers', icon: Package, countKey: 'loans' },
+          { href: '/loans/requested', label: 'Requested', icon: Inbox, countKey: 'loans' },
+          { href: '/loans/approved', label: 'Approved', icon: CheckCircle2, countKey: 'loans' },
+          { href: '/loans/disbursed', label: 'Disbursed', icon: Banknote, countKey: 'loans' },
+          { href: '/loans/repayments', label: 'Repayments', icon: Undo2, countKey: 'loans' },
+          { href: '/loans/guarantors', label: 'Guarantors', icon: ShieldCheck, countKey: 'loans' },
+        ],
+      },
       // { href: '/services', label: 'Services', icon: Sparkles },
       { href: '/welfare', label: 'Welfare', icon: HeartHandshake, countKey: 'welfare' },
       { href: '/opportunities', label: 'Opportunities', icon: Sparkles, countKey: 'opportunities' },

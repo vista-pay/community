@@ -1,20 +1,21 @@
 import type { Metadata } from 'next';
-import { communityGet, isKycRequired } from '@/server/portal-data';
+import { communityGet, communityGetSafe, isKycRequired } from '@/server/portal-data';
 import { KycRequiredPage } from '@/components/kyc-required';
-import type { AjoGroupSummary, Loan, LoanProduct } from '@/types';
-import { LoansClient } from './loans-client';
+import type { Loan, LoanProduct } from '@/types';
+import { LoansHubClient } from './loans-hub-client';
 
 export const metadata: Metadata = { title: 'Loans' };
 
 export default async function LoansPage() {
-  let products: LoanProduct[];
   let loans: Loan[];
+  let products: LoanProduct[] | null;
   try {
-    // Standalone community loans: applications come straight from members and
-    // disburse from the community wallet — no group pools involved.
-    [products, loans] = await Promise.all([
-      communityGet<LoanProduct[]>('/loan-products'),
+    // The loan list carries the KYC gate, so it is the read that must throw.
+    // Offers are only a count on this page — safe, so a hiccup there does not
+    // stop an officer reaching the sub-sections.
+    [loans, products] = await Promise.all([
       communityGet<Loan[]>('/loans'),
+      communityGetSafe<LoanProduct[]>('/loan-products'),
     ]);
   } catch (error) {
     if (isKycRequired(error)) {
@@ -28,14 +29,5 @@ export default async function LoansPage() {
     throw error;
   }
 
-  // The client renders loans grouped; community loans are one lender: the
-  // community wallet itself.
-  const loansByGroup = [
-    {
-      group: { groupId: 'community', name: 'Community loans' } as unknown as AjoGroupSummary,
-      loans,
-    },
-  ];
-
-  return <LoansClient products={products} loansByGroup={loansByGroup} />;
+  return <LoansHubClient loans={loans} products={products ?? []} />;
 }

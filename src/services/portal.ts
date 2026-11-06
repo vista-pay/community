@@ -71,6 +71,10 @@ import type {
   CommunityConfiguration,
   CommunityLevy,
   DuesLeviesOverview,
+  InviteResult,
+  LoanGuarantorRow,
+  LoanRepaymentRow,
+  PendingInvitation,
   LevyFrequency,
 } from '@/types';
 
@@ -375,6 +379,14 @@ export const portalApi = {
   communityLoans: (communityId: string, status?: string) =>
     get<Loan[]>(path(communityId, '/loans'), { status }),
 
+  /** Every repayment recorded against the community's own loans. */
+  loanRepayments: (communityId: string) =>
+    get<LoanRepaymentRow[]>(path(communityId, '/loans/repayments')),
+
+  /** Guarantors flattened across the community's loans, one row each. */
+  loanGuarantors: (communityId: string) =>
+    get<LoanGuarantorRow[]>(path(communityId, '/loans/guarantors')),
+
   createLoanProduct: (
     communityId: string,
     body: Record<string, unknown>,
@@ -667,6 +679,22 @@ export const portalApi = {
       ...body,
       ...extra,
     }),
+
+  // ───────────────────── Member invitations ─────────────────────
+
+  /**
+   * One payload for a single invite, a pasted list and a CSV alike — the API
+   * de-duplicates and reports per address, so the client never has to fan out.
+   */
+  inviteCommunityMembers: (communityId: string, emails: string[]) =>
+    post<InviteResult>(path(communityId, '/members/invite'), { emails }),
+
+  /** Invitations an officer has sent that nobody has answered yet. */
+  pendingInvitations: (communityId: string) =>
+    get<PendingInvitation[]>(path(communityId, '/members/invitations')),
+
+  revokeInvitation: (communityId: string, invitationId: string) =>
+    del<{ revoked: true }>(path(communityId, `/members/invitations/${invitationId}`)),
 
   // ───────────────────── Dues & levies ─────────────────────
 

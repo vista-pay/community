@@ -166,6 +166,11 @@ export type MemberStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED' | 'LE
 export interface MemberRow {
   id: string;
   userId: string;
+  /**
+   * The community's own code (e.g. KAKA-261106-0001). Null for members who
+   * joined before the community set a prefix.
+   */
+  memberCode: string | null;
   memberNumber: string;
   name: string;
   email: string;
@@ -1355,4 +1360,66 @@ export interface DuesLeviesOverview {
   levies: CommunityLevy[];
   /** Dues plus every monthly levy — what an active member owes each month. */
   monthlyTotalPerMember: Money;
+}
+
+// ───────────────────────── Member invitations ─────────────────────────
+
+export interface InviteOutcome {
+  email: string;
+  status: 'INVITED' | 'ALREADY_MEMBER' | 'ALREADY_INVITED' | 'INVALID';
+  /** Whether they already have a Rendi account — decides how they were told. */
+  hasAccount: boolean;
+  reason?: string;
+}
+
+/** An invitation an officer has sent that has not been answered yet. */
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  hasAccount: boolean;
+  invitedAt: string;
+  expiresAt: string;
+  invitedBy: string | null;
+}
+
+export interface InviteResult {
+  invited: number;
+  outcomes: InviteOutcome[];
+}
+
+// ───────────────────── The loan book, officer-side ─────────────────────
+
+export interface LoanRepaymentRow {
+  id: string;
+  loanId: string;
+  loanReference: string;
+  loanStatus: LoanStatus;
+  amount: Money;
+  currencyCode: string;
+  paidAt: IsoDate;
+  /** What is still owed on the loan after this repayment. */
+  outstanding: Money;
+  borrower: string | null;
+}
+
+export type GuarantorStatus = 'PENDING' | 'CONFIRMED' | 'DECLINED';
+
+export interface LoanGuarantorRow {
+  id: string;
+  loanId: string;
+  loanReference: string;
+  loanStatus: LoanStatus;
+  principal: Money;
+  currencyCode: string;
+  borrower: string | null;
+  status: GuarantorStatus;
+  respondedAt: IsoDate | null;
+  createdAt: IsoDate;
+  /** An officer recorded the answer rather than the guarantor themselves. */
+  recordedByOfficer: boolean;
+  /** Not on the platform — can only ever be confirmed by an officer. */
+  isExternal: boolean;
+  name: string;
+  email: string | null;
+  phone: string | null;
 }

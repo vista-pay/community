@@ -20,7 +20,6 @@ import {
   ConfirmDialog,
   EmptyState,
   Modal,
-  PageHeader,
   Tabs,
   Textarea,
 } from '@/components/ui';
@@ -101,11 +100,6 @@ export function JoinRequestsClient({ initial }: { initial: JoinRequest[] }) {
 
   return (
     <>
-      <PageHeader
-        title="Join requests"
-        subtitle="Applications from the Rendi app and your public listing"
-      />
-
       <Tabs
         value={filter}
         onChange={setFilter}
