@@ -711,6 +711,20 @@ export const portalApi = {
     fileName?: string,
   ) => post<BatchPreview>(path(communityId, `/migration/${kind}/preview`), { csv, fileName }),
 
+  /**
+   * Re-check a waiting import. Omit corrections to simply re-run validation
+   * against current state, which is what fixes rows rejected only because a
+   * product did not exist yet.
+   */
+  revalidateMigrationBatch: (
+    communityId: string,
+    batchId: string,
+    corrections: Array<{ line: number; cells: Record<string, string> }> = [],
+  ) =>
+    post<BatchPreview>(path(communityId, `/migration/batches/${batchId}/revalidate`), {
+      corrections,
+    }),
+
   commitMigrationBatch: (communityId: string, batchId: string) =>
     post<{ committed: number; kind: MigrationRowKind }>(
       path(communityId, `/migration/batches/${batchId}/commit`),
@@ -736,7 +750,7 @@ export const portalApi = {
    * de-duplicates and reports per address, so the client never has to fan out.
    */
   inviteCommunityMembers: (communityId: string, emails: string[]) =>
-    post<InviteResult>(path(communityId, '/members/invite'), { emails }),
+    post<InviteResult>(path(communityId, '/members/invite'), { identifiers: emails }),
 
   /** Invitations an officer has sent that nobody has answered yet. */
   pendingInvitations: (communityId: string) =>

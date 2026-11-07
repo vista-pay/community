@@ -9,6 +9,7 @@ import {
   Download,
   FileUp,
   Landmark,
+  RefreshCw,
   Upload,
   Users,
   X,
@@ -35,7 +36,7 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { cn, date, money } from '@/lib/format';
 import { downloadCsv } from '@/lib/csv';
-import type { BatchPreview, MigrationStatus } from '@/types';
+import type { BatchPreview, MigrationStatus, RowRejection } from '@/types';
 import { MIGRATION_STEPS, UPLOAD_KINDS, stepIndex } from './steps';
 
 /**
@@ -67,6 +68,34 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
     () => status.batches.find((b) => b.status === 'PREVIEW') ?? null,
     [status.batches],
   );
+
+  /**
+   * The preview to show: the one from this session's upload, or one rebuilt
+   * from the waiting batch.
+   *
+   * Rebuilt because the screen is meant to be resumable. Without this, an
+   * officer who reloads the page — or comes back tomorrow — loses the editor
+   * and is left with a banner telling them rows were rejected but no way to
+   * see or fix which.
+   */
+  const shown = useMemo(() => {
+    if (preview) return preview;
+    if (!live) return null;
+    return {
+      slug: live.kind.toLowerCase(),
+      label: UPLOAD_KINDS.find((k) => k.kind === live.kind)?.label ?? 'Import',
+      result: {
+        batchId: live.id,
+        kind: live.kind,
+        rowCount: live.rowCount,
+        accepted: live.acceptedRows,
+        rejected: live.rejectedRows,
+        rejections: live.rejections ?? [],
+        totalAmount: live.totalAmount ?? '0.00',
+        summary: `${live.acceptedRows} of ${live.rowCount} rows ready to import`,
+      } satisfies BatchPreview,
+    };
+  }, [preview, live]);
 
   const upload = useMutation(
     (slug: 'members' | 'savings' | 'loans' | 'plans', label: string, csv: string, fileName: string) =>
@@ -175,39 +204,21 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
         </Callout>
       ) : null}
 
-      {live && !preview ? (
-        <Callout
-          tone="info"
-          title="You have an import waiting"
-          className="mt-6"
-          action={
-            <span className="flex gap-2">
-              <Button size="sm" loading={commit.pending} onClick={() => commit.run(live.id)}>
-                Apply it
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setDiscarding(true)}>
-                Discard
-              </Button>
-            </span>
-          }
-        >
-          {live.fileName ?? 'A file'} — {live.acceptedRows} of {live.rowCount} rows ready
-          {live.rejectedRows > 0 ? `, ${live.rejectedRows} rejected` : ''}.
-        </Callout>
-      ) : null}
-
-      {preview ? (
+      {shown ? (
         <PreviewCard
-          label={preview.label}
-          result={preview.result}
+          label={shown.label}
+          result={shown.result}
           committing={commit.pending}
-          onApply={() => commit.run(preview.result.batchId)}
+          onApply={() => commit.run(shown.result.batchId)}
           onDiscard={() => setDiscarding(true)}
+          onRechecked={(result) => {
+            setPreview({ slug: shown.slug, label: shown.label, result });
+            void refresh();
+          }}
         />
       ) : (
         <UploadCards
-          disabled={Boolean(live) || upload.pending}
-          disabledReason={live ? 'Apply or discard the waiting import first' : undefined}
+          disabled={upload.pending}
           pending={upload.pending}
           onFile={(slug, label, csv, fileName) => void upload.run(slug, label, csv, fileName)}
         />
@@ -228,7 +239,7 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
         open={discarding}
         onClose={() => setDiscarding(false)}
         onConfirm={() => {
-          const id = preview?.result.batchId ?? live?.id;
+          const id = shown?.result.batchId;
           if (id) void discard.run(id);
         }}
         loading={discard.pending}
@@ -284,12 +295,10 @@ function Stepper({ at }: { at: number }) {
 /** The four file types, each with the columns it needs stated on the card. */
 function UploadCards({
   disabled,
-  disabledReason,
   pending,
   onFile,
 }: {
   disabled: boolean;
-  disabledReason?: string;
   pending: boolean;
   onFile: (
     slug: 'members' | 'savings' | 'loans' | 'plans',
@@ -304,11 +313,6 @@ function UploadCards({
         title="Upload a file"
         subtitle="Checked and totalled before anything is written"
       />
-      {disabledReason ? (
-        <div className="border-b border-slate-100 px-5 py-3 text-[12.5px] text-amber-700">
-          {disabledReason}
-        </div>
-      ) : null}
       <div className="grid gap-px bg-slate-200/70 sm:grid-cols-2">
         {UPLOAD_KINDS.map((kind) => (
           <div key={kind.slug} className="bg-white p-5">
@@ -371,12 +375,14 @@ function PreviewCard({
   committing,
   onApply,
   onDiscard,
+  onRechecked,
 }: {
   label: string;
   result: BatchPreview;
   committing: boolean;
   onApply: () => void;
   onDiscard: () => void;
+  onRechecked: (result: BatchPreview) => void;
 }) {
   return (
     <Card className="mt-6">
@@ -408,47 +414,182 @@ function PreviewCard({
       </dl>
 
       {result.rejections.length > 0 ? (
-        <div className="p-5">
+        <RejectedRows
+          batchId={result.batchId}
+          rejections={result.rejections}
+          onRechecked={onRechecked}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * The rows that will not import, editable in place.
+ *
+ * Two different problems land in this table and they look identical to an
+ * officer, so one control fixes both: either the row is wrong and the cells
+ * need correcting, or the row is fine and something around it was missing —
+ * a product that did not exist when the file went up. Re-check re-runs the
+ * same validation against current state, so creating the product in another
+ * tab and pressing Re-check is a complete fix with no editing at all.
+ *
+ * Sending someone back to a spreadsheet to correct two rows out of four
+ * hundred, re-export and re-upload is a loop that gets abandoned.
+ */
+function RejectedRows({
+  batchId,
+  rejections,
+  onRechecked,
+}: {
+  batchId: string;
+  rejections: RowRejection[];
+  onRechecked: (result: BatchPreview) => void;
+}) {
+  const communityId = useCommunityId();
+  const { toast } = useToast();
+  /** Edits by line, holding only the fields actually touched. */
+  const [edits, setEdits] = useState<Record<number, Record<string, string>>>({});
+
+  // Every column seen across the rejected rows, so each row renders the same
+  // fields in the same order however sparse its own cells are.
+  const columns = useMemo(() => {
+    const seen: string[] = [];
+    for (const row of rejections) {
+      for (const key of Object.keys(row.cells)) {
+        if (!seen.includes(key)) seen.push(key);
+      }
+    }
+    return seen;
+  }, [rejections]);
+
+  const corrections = useMemo(
+    () =>
+      Object.entries(edits)
+        .filter(([, cells]) => Object.keys(cells).length > 0)
+        .map(([line, cells]) => ({ line: Number(line), cells })),
+    [edits],
+  );
+
+  const recheck = useMutation(
+    () => portalApi.revalidateMigrationBatch(communityId, batchId, corrections),
+    {
+      onSuccess: (result) => {
+        setEdits({});
+        onRechecked(result);
+        if (result.rejected === 0) {
+          toast('All rows pass now', 'success', `${result.accepted} ready to import.`);
+        } else {
+          toast(
+            `${result.accepted} ready`,
+            'info',
+            `${result.rejected} still need attention.`,
+          );
+        }
+      },
+      onError: (message) => toast('Could not re-check', 'error', message),
+    },
+  );
+
+  const editable = rejections.filter((r) => Object.keys(r.cells).length > 0);
+  const fixed = rejections.filter((r) => Object.keys(r.cells).length === 0);
+
+  return (
+    <div className="p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
           <p className="flex items-center gap-1.5 text-[13px] font-semibold text-navy-900">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
             These rows will not be imported
           </p>
-          <p className="mt-1 text-[12.5px] text-slate-500">
-            Fix them in your file and upload it again — the rows that are fine will import either
-            way, so you can also apply now and bring the rest later.
+          <p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-slate-500">
+            Fix them here — no need to touch your spreadsheet. If a row was rejected only because
+            a product does not exist yet, create the product and press Re-check; the row itself is
+            fine.
           </p>
-          <div className="mt-3">
-          <DataTable
-            rows={result.rejections}
-            rowKey={(r) => `${r.line}:${r.value}:${r.reason}`}
-            dense
-            columns={[
-              {
-                key: 'line',
-                header: 'Row',
-                cell: (r) => (
-                  <span className="tnum text-[12.5px] text-slate-600">
-                    {r.line > 0 ? r.line : '—'}
-                  </span>
-                ),
-              },
-              {
-                key: 'value',
-                header: 'Member',
-                cell: (r) => <span className="text-[12.5px] font-medium text-navy-900">{r.value}</span>,
-              },
-              {
-                key: 'reason',
-                header: 'Why',
-                cell: (r) => <span className="text-[12.5px] text-slate-600">{r.reason}</span>,
-              },
-            ]}
-          />
-          </div>
         </div>
-      ) : null}
-    </Card>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<RefreshCw className="h-3.5 w-3.5" />}
+          loading={recheck.pending}
+          onClick={() => recheck.run()}
+        >
+          {corrections.length > 0 ? `Re-check with ${corrections.length} edit${corrections.length === 1 ? '' : 's'}` : 'Re-check'}
+        </Button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {editable.map((row) => (
+          <div key={`${row.line}-${row.value}`} className="rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <Badge tone="slate">Row {row.line > 0 ? row.line : '—'}</Badge>
+              <span className="text-[12.5px] text-amber-700">{row.reason}</span>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {columns
+                .filter((key) => row.cells[key] !== undefined)
+                .map((key) => (
+                  <Field key={key} label={labelFor(key)} htmlFor={`cell-${row.line}-${key}`}>
+                    <Input
+                      id={`cell-${row.line}-${key}`}
+                      value={edits[row.line]?.[key] ?? row.cells[key]}
+                      onChange={(event) =>
+                        setEdits((current) => ({
+                          ...current,
+                          [row.line]: { ...current[row.line], [key]: event.target.value },
+                        }))
+                      }
+                    />
+                  </Field>
+                ))}
+            </div>
+          </div>
+        ))}
+
+        {/* Rows nothing on this screen can fix — editing them would not help,
+            so they are listed rather than offered as a form. */}
+        {fixed.length > 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <p className="text-[12.5px] font-medium text-navy-900">
+              {fixed.length} row{fixed.length === 1 ? '' : 's'} cannot be fixed here
+            </p>
+            <ul className="mt-2 space-y-1">
+              {fixed.map((row) => (
+                <li key={`${row.line}-${row.value}`} className="text-[12.5px] text-slate-600">
+                  <span className="font-medium text-navy-900">{row.value}</span> — {row.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
+}
+
+/** Column keys arrive with spaces stripped; put them back for the label. */
+function labelFor(key: string): string {
+  const named: Record<string, string> = {
+    memberno: 'Member no',
+    membernumber: 'Member no',
+    membercode: 'Member no',
+    fullname: 'Full name',
+    membername: 'Full name',
+    phonenumber: 'Phone',
+    emailaddress: 'Email',
+    joinedon: 'Joined on',
+    datejoined: 'Joined on',
+    openedon: 'Opened on',
+    dateopened: 'Opened on',
+    disbursedon: 'Disbursed on',
+    datetaken: 'Disbursed on',
+    dueon: 'Due on',
+    duedate: 'Due on',
+    productname: 'Product',
+  };
+  if (named[key]) return named[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 /** Recording money actually transferred in. */

@@ -1366,7 +1366,7 @@ export interface DuesLeviesOverview {
 
 export interface InviteOutcome {
   email: string;
-  status: 'INVITED' | 'ALREADY_MEMBER' | 'ALREADY_INVITED' | 'INVALID';
+  status: 'INVITED' | 'ALREADY_MEMBER' | 'ALREADY_INVITED' | 'INVALID' | 'DELIVERY_FAILED';
   /** Whether they already have a Rendi account — decides how they were told. */
   hasAccount: boolean;
   reason?: string;
@@ -1436,6 +1436,13 @@ export interface RowRejection {
   line: number;
   value: string;
   reason: string;
+  /**
+   * The row as uploaded, keyed by column name with spaces and underscores
+   * stripped. Carried so the row can be corrected here rather than in the
+   * spreadsheet — and for the commonest rejection, a product that does not
+   * exist, the row was never wrong in the first place.
+   */
+  cells: Record<string, string>;
 }
 
 export interface MigrationBatch {
