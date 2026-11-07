@@ -1441,8 +1441,12 @@ export interface RowRejection {
    * stripped. Carried so the row can be corrected here rather than in the
    * spreadsheet — and for the commonest rejection, a product that does not
    * exist, the row was never wrong in the first place.
+   *
+   * Optional because an import still waiting from before on-screen editing
+   * existed has rejections without it. Typing it as always-present would be
+   * a lie that crashes the page the first time one of those is opened.
    */
-  cells: Record<string, string>;
+  cells?: Record<string, string>;
 }
 
 export interface MigrationBatch {

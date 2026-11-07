@@ -451,17 +451,31 @@ function RejectedRows({
   /** Edits by line, holding only the fields actually touched. */
   const [edits, setEdits] = useState<Record<number, Record<string, string>>>({});
 
+  /**
+   * Rejections with their cells guaranteed present.
+   *
+   * A batch uploaded before rows could be edited here has rejections with no
+   * cells at all, and one waiting in the database outlives the deploy that
+   * added them. Those rows fall through to the not-fixable-here list, which
+   * is the honest outcome: there is nothing to edit, and re-uploading is
+   * genuinely the only way to correct them.
+   */
+  const rows = useMemo(
+    () => rejections.map((row) => ({ ...row, cells: row.cells ?? {} })),
+    [rejections],
+  );
+
   // Every column seen across the rejected rows, so each row renders the same
   // fields in the same order however sparse its own cells are.
   const columns = useMemo(() => {
     const seen: string[] = [];
-    for (const row of rejections) {
+    for (const row of rows) {
       for (const key of Object.keys(row.cells)) {
         if (!seen.includes(key)) seen.push(key);
       }
     }
     return seen;
-  }, [rejections]);
+  }, [rows]);
 
   const corrections = useMemo(
     () =>
@@ -491,8 +505,16 @@ function RejectedRows({
     },
   );
 
-  const editable = rejections.filter((r) => Object.keys(r.cells).length > 0);
-  const fixed = rejections.filter((r) => Object.keys(r.cells).length === 0);
+  const editable = rows.filter((r) => Object.keys(r.cells).length > 0);
+  const fixed = rows.filter((r) => Object.keys(r.cells).length === 0);
+
+  /**
+   * Nothing carries cells, so this import was uploaded before rows could be
+   * edited here and kept nothing to re-check against. Discarding and
+   * uploading again is genuinely the only way forward, so say that rather
+   * than offer a button that errors.
+   */
+  const stale = rows.length > 0 && editable.length === 0;
 
   return (
     <div className="p-5">
@@ -503,20 +525,27 @@ function RejectedRows({
             These rows will not be imported
           </p>
           <p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-slate-500">
-            Fix them here — no need to touch your spreadsheet. If a row was rejected only because
-            a product does not exist yet, create the product and press Re-check; the row itself is
-            fine.
+            {stale
+              ? 'This import was uploaded before rows could be edited here, so there is nothing to re-check against. Discard it and upload the file again to fix these rows on screen.'
+              : 'Fix them here — no need to touch your spreadsheet. If a row was rejected only because a product does not exist yet, create the product and press Re-check; the row itself is fine.'}
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<RefreshCw className="h-3.5 w-3.5" />}
-          loading={recheck.pending}
-          onClick={() => recheck.run()}
-        >
-          {corrections.length > 0 ? `Re-check with ${corrections.length} edit${corrections.length === 1 ? '' : 's'}` : 'Re-check'}
-        </Button>
+        {/* An import from before on-screen editing kept no rows to re-check
+            against, so offering the button would be a trap. Nothing here can
+            fix it and the page says so. */}
+        {stale ? null : (
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<RefreshCw className="h-3.5 w-3.5" />}
+            loading={recheck.pending}
+            onClick={() => recheck.run()}
+          >
+            {corrections.length > 0
+              ? `Re-check with ${corrections.length} edit${corrections.length === 1 ? '' : 's'}`
+              : 'Re-check'}
+          </Button>
+        )}
       </div>
 
       <div className="mt-4 space-y-3">
@@ -552,7 +581,9 @@ function RejectedRows({
         {fixed.length > 0 ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
             <p className="text-[12.5px] font-medium text-navy-900">
-              {fixed.length} row{fixed.length === 1 ? '' : 's'} cannot be fixed here
+              {stale
+                ? `${fixed.length} rejected row${fixed.length === 1 ? '' : 's'}`
+                : `${fixed.length} row${fixed.length === 1 ? '' : 's'} cannot be fixed here`}
             </p>
             <ul className="mt-2 space-y-1">
               {fixed.map((row) => (
