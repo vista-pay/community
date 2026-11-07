@@ -49,6 +49,7 @@ import {
   Banknote,
   Undo2,
   ShieldCheck,
+  Import,
 } from 'lucide-react';
 import { cn } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
@@ -174,6 +175,9 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     group: 'Manage',
     items: [
       { href: '/staff', label: 'Staff & roles', icon: UserCog, countKey: 'staff' },
+      // Below Staff rather than inside Members: a migration is a one-time
+      // project with its own lifecycle, not a way of adding a member.
+      { href: '/migrate', label: 'Migrate', icon: Import, countKey: 'staff' },
       { href: '/billing', label: 'Billing & plan', icon: CreditCard, countKey: 'billing' },
       // One screen for everything that decides what members are charged or
       // who qualifies. Every save on it is owner-approved, which is why it is

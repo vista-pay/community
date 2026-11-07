@@ -72,6 +72,9 @@ import type {
   CommunityLevy,
   DuesLeviesOverview,
   InviteResult,
+  BatchPreview,
+  MigrationRowKind,
+  MigrationStatus,
   LoanGuarantorRow,
   LoanRepaymentRow,
   PendingInvitation,
@@ -679,6 +682,40 @@ export const portalApi = {
       ...body,
       ...extra,
     }),
+
+  // ───────────────── Migrating in from a previous system ─────────────────
+
+  migrationStatus: (communityId: string) =>
+    get<MigrationStatus>(path(communityId, '/migration')),
+
+  /**
+   * A dry run. Returns what would happen and writes nothing, so an officer
+   * sees the totals and every rejected row before committing.
+   */
+  previewMigration: (
+    communityId: string,
+    kind: 'members' | 'savings' | 'loans' | 'plans',
+    csv: string,
+    fileName?: string,
+  ) => post<BatchPreview>(path(communityId, `/migration/${kind}/preview`), { csv, fileName }),
+
+  commitMigrationBatch: (communityId: string, batchId: string) =>
+    post<{ committed: number; kind: MigrationRowKind }>(
+      path(communityId, `/migration/batches/${batchId}/commit`),
+      {},
+    ),
+
+  discardMigrationBatch: (communityId: string, batchId: string) =>
+    del<{ discarded: true }>(path(communityId, `/migration/batches/${batchId}`)),
+
+  recordMigrationFunding: (
+    communityId: string,
+    body: { amount: string; bankReference?: string; note?: string },
+  ) =>
+    post<{ id: string; amount: string; outstanding: string }>(
+      path(communityId, '/migration/funding'),
+      body,
+    ),
 
   // ───────────────────── Member invitations ─────────────────────
 

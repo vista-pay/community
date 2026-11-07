@@ -1423,3 +1423,64 @@ export interface LoanGuarantorRow {
   email: string | null;
   phone: string | null;
 }
+
+// ───────────────── Migrating in from a previous system ─────────────────
+
+export type MigrationStep = 'ROSTER' | 'BALANCES' | 'CLAIMING' | 'FUNDING' | 'COMPLETE';
+export type MigrationRowKind = 'MEMBER' | 'SAVINGS' | 'LOAN' | 'PLAN';
+export type MigrationBatchStatus = 'PREVIEW' | 'COMMITTED' | 'DISCARDED';
+
+/** A row the import could not use, and why, in words an officer can act on. */
+export interface RowRejection {
+  /** 1-based and counting the header, so it matches what Excel shows. */
+  line: number;
+  value: string;
+  reason: string;
+}
+
+export interface MigrationBatch {
+  id: string;
+  kind: MigrationRowKind;
+  status: MigrationBatchStatus;
+  fileName: string | null;
+  rowCount: number;
+  acceptedRows: number;
+  rejectedRows: number;
+  rejections: RowRejection[] | null;
+  totalAmount: Money | null;
+  committedAt: IsoDate | null;
+  createdAt: IsoDate;
+}
+
+/** The result of a dry run. Nothing has been written. */
+export interface BatchPreview {
+  batchId: string;
+  kind: MigrationRowKind;
+  rowCount: number;
+  accepted: number;
+  rejected: number;
+  rejections: RowRejection[];
+  totalAmount: Money;
+  /** What committing this would do, in one sentence. */
+  summary: string;
+}
+
+export interface MigrationStatus {
+  step: MigrationStep;
+  members: { total: number; claimed: number; unclaimed: number };
+  positions: {
+    total: number;
+    materialised: number;
+    savingsOwed: Money;
+    loansOut: Money;
+  };
+  funding: {
+    /** Savings owed less loans out: the cash they should be holding. */
+    expectedCash: Money;
+    funded: Money;
+    /** Still to transfer. Zero means the migration is done. */
+    outstanding: Money;
+    complete: boolean;
+  };
+  batches: MigrationBatch[];
+}
