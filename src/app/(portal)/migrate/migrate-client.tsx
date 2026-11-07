@@ -25,7 +25,9 @@ import {
   Field,
   Input,
   KV,
+  LinkButton,
   PageHeader,
+  Select,
   Stat,
   StatusBadge,
   Textarea,
@@ -36,8 +38,9 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { cn, date, money } from '@/lib/format';
 import { downloadCsv } from '@/lib/csv';
+import type { Route } from 'next';
 import type { BatchPreview, MigrationStatus, RowRejection } from '@/types';
-import { MIGRATION_STEPS, UPLOAD_KINDS, stepIndex } from './steps';
+import { MIGRATION_STEPS, UPLOAD_KINDS, fieldOrder, productKindFor, stepIndex } from './steps';
 
 /**
  * Bringing a community in from its previous system.
@@ -207,6 +210,7 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
       {shown ? (
         <PreviewCard
           label={shown.label}
+          slug={shown.slug}
           result={shown.result}
           committing={commit.pending}
           onApply={() => commit.run(shown.result.batchId)}
@@ -371,6 +375,7 @@ function UploadCards({
 /** The dry run: what would happen, and every row that would not. */
 function PreviewCard({
   label,
+  slug,
   result,
   committing,
   onApply,
@@ -378,6 +383,7 @@ function PreviewCard({
   onRechecked,
 }: {
   label: string;
+  slug: string;
   result: BatchPreview;
   committing: boolean;
   onApply: () => void;
@@ -416,6 +422,7 @@ function PreviewCard({
       {result.rejections.length > 0 ? (
         <RejectedRows
           batchId={result.batchId}
+          slug={slug}
           rejections={result.rejections}
           onRechecked={onRechecked}
         />
@@ -439,10 +446,12 @@ function PreviewCard({
  */
 function RejectedRows({
   batchId,
+  slug,
   rejections,
   onRechecked,
 }: {
   batchId: string;
+  slug: string;
   rejections: RowRejection[];
   onRechecked: (result: BatchPreview) => void;
 }) {
@@ -450,6 +459,8 @@ function RejectedRows({
   const { toast } = useToast();
   /** Edits by line, holding only the fields actually touched. */
   const [edits, setEdits] = useState<Record<number, Record<string, string>>>({});
+  /** Which groups the officer has opened to edit row by row. */
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   /**
    * Rejections with their cells guaranteed present.
@@ -465,17 +476,51 @@ function RejectedRows({
     [rejections],
   );
 
-  // Every column seen across the rejected rows, so each row renders the same
-  // fields in the same order however sparse its own cells are.
-  const columns = useMemo(() => {
-    const seen: string[] = [];
-    for (const row of rows) {
-      for (const key of Object.keys(row.cells)) {
-        if (!seen.includes(key)) seen.push(key);
-      }
+  const editable = rows.filter((r) => Object.keys(r.cells).length > 0);
+  const fixed = rows.filter((r) => Object.keys(r.cells).length === 0);
+
+  /**
+   * Nothing carries cells, so this import was uploaded before rows could be
+   * edited here and kept nothing to re-check against. Discarding and
+   * uploading again is genuinely the only way forward, so say that rather
+   * than offer a button that errors.
+   */
+  const stale = rows.length > 0 && editable.length === 0;
+
+  /**
+   * Rejections grouped by reason.
+   *
+   * Four hundred rows missing the same product is one problem, not four
+   * hundred. Listing them individually buries the single action that fixes
+   * them all under a page of identical forms.
+   */
+  const groups = useMemo(() => {
+    const byReason = new Map<string, typeof editable>();
+    for (const row of editable) {
+      const list = byReason.get(row.reason) ?? [];
+      list.push(row);
+      byReason.set(row.reason, list);
     }
-    return seen;
-  }, [rows]);
+    return [...byReason.entries()].map(([reason, members]) => ({
+      reason,
+      rows: members,
+      /** The product this group is complaining about, if it is that kind of
+       * complaint — which is what a bulk re-point needs to know. */
+      missingProduct: /called "(.+?)"/.exec(reason)?.[1] ?? null,
+    }));
+  }, [editable]);
+
+  // Only fetched when a group actually needs it, so a members import does no
+  // product lookups at all.
+  const needsProducts = groups.some((g) => g.missingProduct) && productKindFor(slug);
+  const products = useQuery<Array<{ id: string; name: string }>>(
+    () =>
+      productKindFor(slug) === 'loans'
+        ? portalApi.loanProducts(communityId)
+        : portalApi.savingsProducts(communityId),
+    [communityId, slug, needsProducts],
+    { enabled: Boolean(needsProducts) },
+  );
 
   const corrections = useMemo(
     () =>
@@ -494,27 +539,31 @@ function RejectedRows({
         if (result.rejected === 0) {
           toast('All rows pass now', 'success', `${result.accepted} ready to import.`);
         } else {
-          toast(
-            `${result.accepted} ready`,
-            'info',
-            `${result.rejected} still need attention.`,
-          );
+          toast(`${result.accepted} ready`, 'info', `${result.rejected} still need attention.`);
         }
       },
       onError: (message) => toast('Could not re-check', 'error', message),
     },
   );
 
-  const editable = rows.filter((r) => Object.keys(r.cells).length > 0);
-  const fixed = rows.filter((r) => Object.keys(r.cells).length === 0);
+  /** Point every row in a group at a product that does exist. */
+  const repoint = (lines: number[], name: string) =>
+    setEdits((current) => {
+      const next = { ...current };
+      for (const line of lines) {
+        next[line] = { ...next[line], product: name };
+      }
+      return next;
+    });
 
-  /**
-   * Nothing carries cells, so this import was uploaded before rows could be
-   * edited here and kept nothing to re-check against. Discarding and
-   * uploading again is genuinely the only way forward, so say that rather
-   * than offer a button that errors.
-   */
-  const stale = rows.length > 0 && editable.length === 0;
+  const order = fieldOrder(slug);
+  const sortKeys = (keys: string[]) =>
+    [...keys].sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      // Anything the upload card does not name goes last, in its own order.
+      return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
+    });
 
   return (
     <div className="p-5">
@@ -522,59 +571,121 @@ function RejectedRows({
         <div>
           <p className="flex items-center gap-1.5 text-[13px] font-semibold text-navy-900">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
-            These rows will not be imported
+            {rows.length} row{rows.length === 1 ? '' : 's'} will not be imported
           </p>
           <p className="mt-1 max-w-2xl text-[12.5px] leading-5 text-slate-500">
             {stale
               ? 'This import was uploaded before rows could be edited here, so there is nothing to re-check against. Discard it and upload the file again to fix these rows on screen.'
-              : 'Fix them here — no need to touch your spreadsheet. If a row was rejected only because a product does not exist yet, create the product and press Re-check; the row itself is fine.'}
+              : 'Grouped by what is wrong. Fix a whole group at once where you can — no need to touch your spreadsheet.'}
           </p>
         </div>
         {/* An import from before on-screen editing kept no rows to re-check
-            against, so offering the button would be a trap. Nothing here can
-            fix it and the page says so. */}
+            against, so offering the button would be a trap. */}
         {stale ? null : (
           <Button
             size="sm"
-            variant="secondary"
+            variant={corrections.length > 0 ? 'primary' : 'secondary'}
             icon={<RefreshCw className="h-3.5 w-3.5" />}
             loading={recheck.pending}
             onClick={() => recheck.run()}
           >
             {corrections.length > 0
-              ? `Re-check with ${corrections.length} edit${corrections.length === 1 ? '' : 's'}`
+              ? `Re-check with ${corrections.length} fix${corrections.length === 1 ? '' : 'es'}`
               : 'Re-check'}
           </Button>
         )}
       </div>
 
-      <div className="mt-4 space-y-3">
-        {editable.map((row) => (
-          <div key={`${row.line}-${row.value}`} className="rounded-xl border border-slate-200 p-4">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <Badge tone="slate">Row {row.line > 0 ? row.line : '—'}</Badge>
-              <span className="text-[12.5px] text-amber-700">{row.reason}</span>
+      <div className="mt-4 space-y-4">
+        {groups.map((group) => {
+          const lines = group.rows.map((r) => r.line);
+          const isOpen = opened[group.reason] ?? false;
+          const pending = lines.filter((line) => edits[line]).length;
+
+          return (
+            <div key={group.reason} className="rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4">
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <Badge tone={pending === group.rows.length ? 'green' : 'amber'}>
+                      {group.rows.length} row{group.rows.length === 1 ? '' : 's'}
+                    </Badge>
+                    <span className="text-[13px] font-medium text-navy-900">{group.reason}</span>
+                  </p>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Rows {lines.join(', ')}
+                    {pending > 0 ? ` · ${pending} fixed, re-check to confirm` : ''}
+                  </p>
+                </div>
+                <Button size="xs" variant="ghost" onClick={() => setOpened((o) => ({ ...o, [group.reason]: !isOpen }))}>
+                  {isOpen ? 'Hide rows' : `Edit ${group.rows.length === 1 ? 'row' : 'rows'}`}
+                </Button>
+              </div>
+
+              {/* The whole-group fix, where one exists. A product that does
+                  not exist is the commonest rejection by far, and the row is
+                  almost never what is wrong — so the two real answers are
+                  offered here rather than left as an editing exercise. */}
+              {group.missingProduct ? (
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 p-4">
+                  <span className="text-[12.5px] text-slate-600">Point all {group.rows.length} at:</span>
+                  <Select
+                    aria-label={`Replace ${group.missingProduct} for all rows`}
+                    className="max-w-[220px]"
+                    value=""
+                    onChange={(event) => {
+                      if (event.target.value) repoint(lines, event.target.value);
+                    }}
+                  >
+                    <option value="">Choose an existing one…</option>
+                    {(products.data ?? []).map((product) => (
+                      <option key={product.id} value={product.name}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <span className="text-[12.5px] text-slate-400">or</span>
+                  <LinkButton
+                    size="sm"
+                    variant="secondary"
+                    href={(productKindFor(slug) === 'loans' ? '/loans/new' : '/savings/new') as Route}
+                  >
+                    Create &ldquo;{group.missingProduct}&rdquo;
+                  </LinkButton>
+                  <span className="text-[12.5px] text-slate-500">
+                    then come back and press Re-check — the rows themselves are fine.
+                  </span>
+                </div>
+              ) : null}
+
+              {isOpen ? (
+                <div className="divide-y divide-slate-100">
+                  {group.rows.map((row) => (
+                    <div key={`${row.line}-${row.value}`} className="p-4">
+                      <Badge tone="slate">Row {row.line > 0 ? row.line : '—'}</Badge>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {sortKeys(Object.keys(row.cells)).map((key) => (
+                          <Field key={key} label={labelFor(key)} htmlFor={`cell-${row.line}-${key}`}>
+                            <Input
+                              id={`cell-${row.line}-${key}`}
+                              value={edits[row.line]?.[key] ?? row.cells[key]}
+                              onChange={(event) =>
+                                setEdits((current) => ({
+                                  ...current,
+                                  [row.line]: { ...current[row.line], [key]: event.target.value },
+                                }))
+                              }
+                            />
+                          </Field>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {columns
-                .filter((key) => row.cells[key] !== undefined)
-                .map((key) => (
-                  <Field key={key} label={labelFor(key)} htmlFor={`cell-${row.line}-${key}`}>
-                    <Input
-                      id={`cell-${row.line}-${key}`}
-                      value={edits[row.line]?.[key] ?? row.cells[key]}
-                      onChange={(event) =>
-                        setEdits((current) => ({
-                          ...current,
-                          [row.line]: { ...current[row.line], [key]: event.target.value },
-                        }))
-                      }
-                    />
-                  </Field>
-                ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Rows nothing on this screen can fix — editing them would not help,
             so they are listed rather than offered as a form. */}

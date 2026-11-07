@@ -112,3 +112,24 @@ export function stepIndex(step: MigrationStep): number {
   const at = MIGRATION_STEPS.findIndex((s) => s.step === step);
   return at === -1 ? 0 : at;
 }
+
+/**
+ * The order fields should read in, per file type.
+ *
+ * Derived from the same `columns` string the upload card shows, so an edit
+ * form never contradicts the instructions that produced the file. Without it
+ * fields render in whatever order the keys happen to sit in the object —
+ * which is how "Due on" ends up above "Member no".
+ */
+export function fieldOrder(slug: string): string[] {
+  const kind = UPLOAD_KINDS.find((k) => k.slug === slug);
+  if (!kind) return [];
+  return kind.columns.split(',').map((name) => name.trim().replace(/[\s_-]/g, ''));
+}
+
+/** Which product list a file type draws on, if any. */
+export function productKindFor(slug: string): 'savings' | 'loans' | null {
+  if (slug === 'savings') return 'savings';
+  if (slug === 'loans') return 'loans';
+  return null;
+}
