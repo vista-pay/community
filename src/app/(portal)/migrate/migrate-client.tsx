@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Banknote,
   Check,
+  Download,
   FileUp,
   Landmark,
   Upload,
@@ -33,6 +34,7 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { cn, date, money } from '@/lib/format';
+import { downloadCsv } from '@/lib/csv';
 import type { BatchPreview, MigrationStatus } from '@/types';
 import { MIGRATION_STEPS, UPLOAD_KINDS, stepIndex } from './steps';
 
@@ -313,7 +315,8 @@ function UploadCards({
             <p className="text-[14px] font-semibold text-navy-900">{kind.label}</p>
             <p className="mt-1 font-mono text-[11.5px] leading-5 text-slate-500">{kind.columns}</p>
             <p className="mt-1.5 text-[12px] leading-5 text-slate-500">{kind.note}</p>
-            <label className="mt-3 inline-flex">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="inline-flex">
               <input
                 type="file"
                 accept=".csv,.txt,text/csv,text/plain"
@@ -341,7 +344,19 @@ function UploadCards({
                 )}
                 Choose a CSV
               </span>
-            </label>
+              </label>
+              {/* The sample is the fastest answer to "what exactly goes in
+                  this file?" — its rows demonstrate the formats that work,
+                  which a list of column names cannot. */}
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Download className="h-3.5 w-3.5" />}
+                onClick={() => downloadCsv(`rendi-${kind.slug}-sample.csv`, kind.sample)}
+              >
+                Sample
+              </Button>
+            </div>
           </div>
         ))}
       </div>

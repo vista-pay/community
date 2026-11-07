@@ -8,7 +8,7 @@
  * `path()` builds the community-scoped prefix once so a typo in one screen
  * cannot quietly point at the wrong community.
  */
-import { del, get, patch, post } from '@/lib/api';
+import { del, get, patch, post, postBlob } from '@/lib/api';
 import type { MoneyOutExtra } from '@/components/money-out-otp';
 import type {
   AccountLedger,
@@ -408,6 +408,18 @@ export const portalApi = {
     productId: string,
     body: { principal: string; tenorMonths: number },
   ) => post<LoanQuote>(path(communityId, `/loan-products/${productId}/quote`), body),
+
+  downloadLoanQuote: (
+    communityId: string,
+    productId: string,
+    body: { principal: string; tenorMonths: number },
+  ) => postBlob(path(communityId, `/loan-products/${productId}/quote/pdf`), body),
+
+  emailLoanQuote: (
+    communityId: string,
+    productId: string,
+    body: { principal: string; tenorMonths: number; recipientType: 'MEMBER' | 'ALL'; memberId?: string },
+  ) => post<{ recipientCount: number; sent: number }>(path(communityId, `/loan-products/${productId}/quote/email`), body),
 
   // Legacy group-funded loan applications live on the Ajo group.
   groupLoans: (ajoGroupId: string, status?: string) =>

@@ -87,6 +87,21 @@ export const post = <T,>(
 export const patch = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'PATCH', body });
 export const del = <T,>(path: string) => api<T>(path, { method: 'DELETE' });
 
+export async function postBlob(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api/proxy${path.startsWith('/') ? path : `/${path}`}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => null);
+    throw new ApiError(json?.message ?? json?.error ?? `Request failed (${res.status})`, res.status, json);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'loan-quote.pdf';
+  return { blob: await res.blob(), filename };
+}
+
 /** Auth endpoints live on this app, not behind the proxy. */
 export const authApi = {
   signIn: async (identifier: string, password: string) => {
