@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import type { Route } from 'next';
-import Link from 'next/link';
 import { BadgeCheck, CalendarClock, Coins, IdCard, Plus, Users } from 'lucide-react';
 import {
   Badge,
@@ -75,11 +74,6 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
       <PageHeader
         title="Dues & levies"
         subtitle="What every member is charged, and the code they are known by"
-        breadcrumb={
-          <Link href="/accounting" className="hover:text-navy-900">
-            Accounting
-          </Link>
-        }
         actions={
           <Button onClick={() => setCreating(true)} icon={<Plus className="h-4 w-4" />}>
             New levy

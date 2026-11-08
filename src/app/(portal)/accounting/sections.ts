@@ -1,6 +1,5 @@
 import {
   BookOpen,
-  Coins,
   FileSpreadsheet,
   ListTree,
   NotebookPen,
@@ -58,12 +57,6 @@ export const ACCOUNTING_SECTIONS: Array<{
     label: 'Revenue',
     description: 'Where income came from and what it cost to earn.',
     icon: TrendingUp,
-  },
-  {
-    href: '/accounting/dues-levies' as Route,
-    label: 'Dues & levies',
-    description: 'What members are charged, and the code they are known by.',
-    icon: Coins,
   },
   {
     href: '/accounting/statements' as Route,

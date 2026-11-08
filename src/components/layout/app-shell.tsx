@@ -134,13 +134,17 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
           { href: '/accounting/chart-of-accounts', label: 'Chart of accounts', icon: ListTree, countKey: 'accounting' },
           { href: '/accounting/ledger', label: 'Ledger entries', icon: Rows3, countKey: 'accounting' },
           { href: '/accounting/journals', label: 'Journals', icon: NotebookPen, countKey: 'accounting' },
-          { href: '/accounting/dues-levies', label: 'Dues & levies', icon: Coins, countKey: 'accounting' },
           { href: '/accounting/books', label: 'Books', icon: BookOpen, countKey: 'accounting' },
           { href: '/trial-balance', label: 'Trial balance', icon: Scale, countKey: 'trialBalance' },
           { href: '/accounting/revenue', label: 'Revenue', icon: TrendingUp, countKey: 'accounting' },
           { href: '/accounting/statements', label: 'Statements', icon: FileSpreadsheet, countKey: 'accounting' },
         ],
       },
+      // Its own section, not a corner of Accounting. Accounting is where an
+      // officer reads the books; this is where they decide what members are
+      // charged — a different job, done by different people, and one they
+      // should not have to go through the ledger to reach.
+      { href: '/dues-levies', label: 'Dues & levies', icon: Coins, countKey: 'accounting' },
       { href: '/reports', label: 'Reports', icon: BarChart3, countKey: 'reports' },
     ],
   },
