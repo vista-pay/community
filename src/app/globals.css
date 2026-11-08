@@ -163,6 +163,57 @@ h3 {
   white-space: nowrap;
 }
 
+/**
+ * Accounting reads at a larger size than the rest of the portal.
+ *
+ * Everywhere else, dense 12–13px tables are fine: the reader is scanning for
+ * a name and clicking it. Here they are checking figures against a bank
+ * statement, line by line, and the smallest type in the app was carrying the
+ * numbers that matter most. A treasurer doing a reconciliation should not
+ * have to lean in.
+ *
+ * Scoped to the section rather than applied globally so member lists and
+ * dashboards keep their density, and expressed as a floor — anything already
+ * larger is left alone.
+ */
+.accounting-type {
+  --accounting-body: 14px;
+  --accounting-meta: 13px;
+  --accounting-label: 12px;
+}
+
+/* Table figures: the numbers being checked. */
+.accounting-type .td {
+  font-size: var(--accounting-body);
+}
+
+.accounting-type .th {
+  font-size: var(--accounting-label);
+  letter-spacing: 0.05em;
+}
+
+/* Raise the hand-set sizes the section uses, smallest first so a later rule
+   cannot undo an earlier one. */
+.accounting-type .text-\[11px\],
+.accounting-type .text-\[11\.5px\] {
+  font-size: var(--accounting-label);
+}
+
+.accounting-type .text-\[12px\],
+.accounting-type .text-\[12\.5px\],
+.accounting-type .text-xs {
+  font-size: var(--accounting-meta);
+}
+
+.accounting-type .text-\[13px\],
+.accounting-type .text-\[13\.5px\] {
+  font-size: var(--accounting-body);
+}
+
+.accounting-type .text-sm {
+  font-size: var(--accounting-body);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
