@@ -52,6 +52,8 @@ export function PollResultClient({ initial }: { initial: PollDetail }) {
   );
   const poll = data ?? initial;
   const open = poll.status === 'OPEN' || poll.status === 'SCHEDULED';
+  const noun =
+    poll.kind === 'ELECTION' ? 'election' : poll.kind === 'POLL' ? 'poll' : 'ballot';
 
   const certify = useMutation(() => portalApi.certifyPoll(communityId, poll.id), {
     onSuccess: async () => {
@@ -154,7 +156,7 @@ export function PollResultClient({ initial }: { initial: PollDetail }) {
           <KV label="Who could vote">{humanise(poll.eligibility)}</KV>
           <KV label="Ballot">{poll.isAnonymous ? 'Anonymous' : 'Open'}</KV>
           <KV label="Certified">
-            {poll.certifiedAt ? date(poll.certifiedAt) : 'Not yet'}
+            {!poll.isBinding ? 'Advisory' : poll.certifiedAt ? date(poll.certifiedAt) : 'Not yet'}
           </KV>
         </dl>
       </Card>
@@ -175,7 +177,8 @@ export function PollResultClient({ initial }: { initial: PollDetail }) {
             Download PDF
           </Button>
 
-          {poll.status === 'CLOSED' && !poll.certifiedAt ? (
+          {/* A poll binds nobody, so there is nothing to certify. */}
+          {poll.isBinding && poll.status === 'CLOSED' && !poll.certifiedAt ? (
             <Button
               variant="secondary"
               icon={<Gavel className="h-4 w-4" />}
@@ -196,9 +199,11 @@ export function PollResultClient({ initial }: { initial: PollDetail }) {
           <p className="text-[12.5px] text-slate-500">
             {open
               ? 'Sending while voting is open would let members see the score before taking their turn.'
-              : poll.certifiedAt
-                ? 'The PDF carries the certification.'
-                : 'The PDF is marked as an uncertified tally until you certify it.'}
+              : !poll.isBinding
+                ? 'A poll is advisory, so the document says so rather than claiming a decision.'
+                : poll.certifiedAt
+                  ? 'The PDF carries the certification.'
+                  : 'The PDF is marked as an uncertified tally until you certify it.'}
           </p>
         </div>
       </Card>
@@ -218,11 +223,11 @@ export function PollResultClient({ initial }: { initial: PollDetail }) {
         onClose={() => setConfirming(null)}
         onConfirm={() => broadcast.run()}
         loading={broadcast.pending}
-        title={`Email the result to all ${poll.eligibleCount} members?`}
+        title={`Email the ${noun} result to all ${poll.eligibleCount} members?`}
         confirmLabel="Send it"
         body={
           poll.certifiedAt
-            ? 'Every active member gets the result by email and in the app.'
+            ? 'Every active member gets the result by email, with the full document attached, and in the app.'
             : 'This result has not been certified yet. Members will be told what the count was, but not that it has been checked — you may want to certify first.'
         }
       />
@@ -260,19 +265,19 @@ function Outcome({ poll }: { poll: PollDetail }) {
 
   return (
     <Callout
-      tone={outcome.kind === 'WON' ? 'success' : 'info'}
-      title={
-        outcome.kind === 'WON'
-          ? `${outcome.label} carried`
-          : `${outcome.label} is leading`
-      }
+      tone={outcome.kind === 'WON' && poll.isBinding ? 'success' : 'info'}
+      // The verb comes from the API so the page and the PDF cannot describe
+      // the same result differently.
+      title={`${outcome.label} ${outcome.verb}`}
     >
       {outcome.votes} of {poll.totalVotes} votes ({outcome.share}%)
       {outcome.kind === 'LEADING'
         ? ' — voting is still open, so this is not final.'
-        : poll.certifiedAt
-          ? ' — certified.'
-          : ' — not yet certified.'}
+        : !poll.isBinding
+          ? ' — a poll is advisory and binds nobody.'
+          : poll.certifiedAt
+            ? ' — certified.'
+            : ' — not yet certified.'}
     </Callout>
   );
 }

@@ -616,10 +616,17 @@ export interface PollOutcome {
   label: string | null;
   votes: number;
   share: number;
+  /**
+   * What winning is called here. A resolution carries, a candidate is
+   * elected, and a poll does neither — it only shows what most people said.
+   */
+  verb: string;
 }
 
 export interface PollDetail extends Poll {
   outcome: PollOutcome;
+  /** False for a poll: it gauges opinion and cannot be certified. */
+  isBinding: boolean;
 }
 
 export interface CommunityDocument {

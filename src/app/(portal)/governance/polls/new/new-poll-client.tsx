@@ -50,6 +50,62 @@ const DEFAULT_OPTIONS: Record<Kind, string[]> = {
   POLL: ['', ''],
 };
 
+/**
+ * The words each kind uses.
+ *
+ * An election has candidates, not options, and a poll asks rather than
+ * decides. Labelling all three the same was the whole of what made two of
+ * them feel unfinished — the form said "Options" for a list of people
+ * standing for Treasurer.
+ */
+const COPY: Record<
+  Kind,
+  {
+    optionsLabel: string;
+    optionsHint: string;
+    placeholder: (index: number) => string;
+    addLabel: string;
+    questionHint: string;
+    questionPlaceholder: string;
+    titlePlaceholder: string;
+    binding: string;
+  }
+> = {
+  RESOLUTION: {
+    optionsLabel: 'Options',
+    optionsHint: 'At least two. Members pick exactly one.',
+    placeholder: (i) => (i === 0 ? 'Yes' : i === 1 ? 'No' : 'Abstain'),
+    addLabel: 'Add an option',
+    questionHint: 'Write it so the answer is unambiguous a year from now.',
+    questionPlaceholder: 'Do you adopt the audited accounts as presented?',
+    titlePlaceholder: 'e.g. Adoption of the 2026 accounts',
+    binding:
+      'A resolution binds the community. Once closed it can be certified, and the certified result is the official record of the decision.',
+  },
+  ELECTION: {
+    optionsLabel: 'Candidates',
+    optionsHint: 'One per person standing. Members vote for exactly one.',
+    placeholder: (i) => (i === 0 ? 'First candidate’s name' : 'Another candidate'),
+    addLabel: 'Add a candidate',
+    questionHint: 'Name the post being filled.',
+    questionPlaceholder: 'Who should serve as Treasurer for 2027?',
+    titlePlaceholder: 'e.g. Election of Treasurer 2027',
+    binding:
+      'An election binds the community. Once closed it can be certified, and the certified result is the official record of who was elected.',
+  },
+  POLL: {
+    optionsLabel: 'Answers',
+    optionsHint: 'At least two. Members pick exactly one.',
+    placeholder: (i) => (i === 0 ? 'First answer' : 'Another answer'),
+    addLabel: 'Add an answer',
+    questionHint: 'A poll gauges opinion — it does not decide anything.',
+    questionPlaceholder: 'Which Saturday suits most members for the AGM?',
+    titlePlaceholder: 'e.g. Preferred AGM date',
+    binding:
+      'A poll is advisory. It cannot be certified and binds nobody — open a resolution if the community needs to decide something.',
+  },
+};
+
 /** An ISO-local value for a datetime-local input, `days` from now. */
 function inDays(days: number): string {
   const at = new Date();
@@ -78,6 +134,8 @@ export function NewPollClient() {
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [opensAt, setOpensAt] = useState(inDays(0));
   const [closesAt, setClosesAt] = useState(inDays(7));
+
+  const copy = COPY[kind];
 
   const cleanOptions = useMemo(
     () => options.map((o) => o.trim()).filter(Boolean),
@@ -134,9 +192,9 @@ export function NewPollClient() {
       />
 
       <Callout tone="info" title="None of this can change once someone votes">
-        A ballot is a record. The question, the options and who may answer are fixed the moment
-        the first vote lands, because changing them afterwards would mean votes cast against a
-        different question.
+        The question, the {copy.optionsLabel.toLowerCase()} and who may answer are fixed the
+        moment the first vote lands, because changing them afterwards would mean votes cast
+        against a different question. {copy.binding}
       </Callout>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -171,7 +229,7 @@ export function NewPollClient() {
                 <Input
                   id="poll-title"
                   value={title}
-                  placeholder="e.g. Adoption of the 2026 accounts"
+                  placeholder={copy.titlePlaceholder}
                   onChange={(event) => setTitle(event.target.value)}
                 />
               </Field>
@@ -180,30 +238,34 @@ export function NewPollClient() {
                 label="What are members being asked?"
                 htmlFor="poll-question"
                 required
-                hint="Write it so the answer is unambiguous a year from now."
+                hint={copy.questionHint}
               >
                 <Textarea
                   id="poll-question"
                   rows={2}
                   value={question}
-                  placeholder="Do you adopt the audited accounts as presented?"
+                  placeholder={copy.questionPlaceholder}
                   onChange={(event) => setQuestion(event.target.value)}
                 />
               </Field>
 
               <Field
-                label="Options"
+                label={copy.optionsLabel}
                 required
-                hint="At least two. Members pick exactly one."
-                error={duplicated ? 'Two options are the same' : undefined}
+                hint={copy.optionsHint}
+                error={
+                  duplicated
+                    ? `Two ${copy.optionsLabel.toLowerCase()} are the same`
+                    : undefined
+                }
               >
                 <div className="space-y-2">
                   {options.map((option, index) => (
                     <div key={index} className="flex items-center gap-2">
                       <Input
                         value={option}
-                        placeholder={index === 0 ? 'Yes' : index === 1 ? 'No' : 'Another option'}
-                        aria-label={`Option ${index + 1}`}
+                        placeholder={copy.placeholder(index)}
+                        aria-label={`${copy.optionsLabel} ${index + 1}`}
                         onChange={(event) =>
                           setOptions((current) =>
                             current.map((o, i) => (i === index ? event.target.value : o)),
@@ -213,7 +275,7 @@ export function NewPollClient() {
                       {options.length > 2 ? (
                         <button
                           type="button"
-                          aria-label={`Remove option ${index + 1}`}
+                          aria-label={`Remove ${copy.optionsLabel.toLowerCase()} ${index + 1}`}
                           className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-ring"
                           onClick={() =>
                             setOptions((current) => current.filter((_, i) => i !== index))
@@ -230,7 +292,7 @@ export function NewPollClient() {
                     icon={<Plus className="h-3.5 w-3.5" />}
                     onClick={() => setOptions((current) => [...current, ''])}
                   >
-                    Add an option
+                    {copy.addLabel}
                   </Button>
                 </div>
               </Field>
@@ -330,6 +392,11 @@ export function NewPollClient() {
                   ? 'Votes are anonymous — nobody sees who chose what.'
                   : 'Votes are open — the result names who chose what.'}
               </p>
+              {kind === 'POLL' ? (
+                <p className="mt-2 text-[12px] leading-5 text-amber-700">
+                  Advisory: this decides nothing and cannot be certified.
+                </p>
+              ) : null}
             </div>
           </Card>
         </aside>
