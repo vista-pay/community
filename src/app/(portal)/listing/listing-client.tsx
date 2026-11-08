@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronDown, Eye, Globe, ImagePlus, Pause, Play, Send, Users } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Eye,
+  Globe,
+  IdCard,
+  ImagePlus,
+  Pause,
+  Play,
+  Send,
+  Users,
+} from 'lucide-react';
 import {
   AmountInput,
   Badge,
@@ -22,6 +33,7 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { uploadImage } from '@/lib/upload';
 import { useSession } from '@/components/providers/session-provider';
 import { ORG_CATEGORIES, SERVICE_TAGS } from '@/data/catalog';
@@ -387,6 +399,14 @@ export function ListingClient({ initial }: { initial: Listing }) {
               />
             </div>
           </Card>
+
+          {/* With Joining, because a code is issued the moment someone is
+              admitted — so it has to be chosen before the first member
+              arrives, not found later under Accounting. */}
+          <MemberCodeCard
+            prefix={listing.memberCode?.prefix ?? null}
+            issued={listing.memberCode?.issued ?? 0}
+          />
         </div>
 
         <div className="space-y-6">
@@ -530,5 +550,83 @@ function ServiceTagPicker({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The prefix every member's code is built from.
+ *
+ * Saved on its own rather than with the rest of the listing: it is
+ * owner-approved and one-way, where the listing is an ordinary edit an
+ * officer makes freely. Folding it into Save would mean an OTP prompt every
+ * time someone changed a tagline.
+ */
+function MemberCodeCard({ prefix, issued }: { prefix: string | null; issued: number }) {
+  const communityId = useCommunityId();
+  const router = useRouter();
+  const [draft, setDraft] = useState(prefix ?? '');
+
+  // Locked once anyone holds a code: changing it would leave those members
+  // carrying an identifier the community no longer issues.
+  const locked = issued > 0;
+
+  const gate = useMoneyOutOtp<{ prefix: string }>({
+    perform: (extra, payload) =>
+      portalApi.setMemberCodePrefix(communityId, payload.prefix, extra),
+    onDone: () => router.refresh(),
+    successMessage: 'Member code prefix set',
+  });
+
+  const example = `${(draft.trim() || 'KAKA').toUpperCase()}-261106-0001`;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Member codes"
+        subtitle={
+          prefix
+            ? `Members are known as ${prefix}-261106-0001`
+            : 'The identifier each member carries, on their card and in the app'
+        }
+      />
+      <div className="space-y-3 px-5 py-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Prefix" htmlFor="li-prefix" className="w-40">
+            <Input
+              id="li-prefix"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value.toUpperCase())}
+              placeholder="KAKA"
+              maxLength={8}
+              disabled={locked}
+              className="uppercase"
+            />
+          </Field>
+          <Button
+            disabled={locked || draft.trim().length < 2}
+            loading={gate.pending}
+            onClick={() => void gate.run({ prefix: draft.trim() })}
+            icon={<IdCard className="h-4 w-4" />}
+          >
+            {prefix ? 'Change prefix' : 'Set prefix'}
+          </Button>
+        </div>
+
+        {!locked && draft.trim().length >= 2 ? (
+          <p className="text-[12.5px] text-slate-500">
+            A member admitted on 6 Nov 2026 becomes{' '}
+            <span className="font-mono text-navy-900">{example}</span>
+          </p>
+        ) : null}
+
+        {/* Said before they try, not as a rejection after. */}
+        <p className="text-xs leading-5 text-slate-500">
+          {locked
+            ? `Locked — ${issued} member code${issued === 1 ? ' has' : 's have'} already been issued as ${prefix}-…. Changing it now would leave those members holding codes the community no longer recognises.`
+            : 'Two to eight letters or digits. Choose carefully — it locks once the first code is issued.'}
+        </p>
+      </div>
+      <MoneyOutOtpDialog gate={gate} />
+    </Card>
   );
 }

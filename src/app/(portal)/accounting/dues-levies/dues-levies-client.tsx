@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { BadgeCheck, CalendarClock, Coins, IdCard, Plus, Users } from 'lucide-react';
 import {
@@ -19,6 +20,7 @@ import {
   Stat,
   Textarea,
   Toggle,
+  LinkButton,
 } from '@/components/ui';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
@@ -51,19 +53,12 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
   const d = data ?? initial;
 
   const [duesDraft, setDuesDraft] = useState(d.monthlyDues ?? '');
-  const [prefixDraft, setPrefixDraft] = useState(d.memberCodePrefix ?? '');
   const [creating, setCreating] = useState(false);
 
   const duesGate = useMoneyOutOtp<{ amount: string | null }>({
     perform: (extra, { amount }) => portalApi.setMonthlyDues(communityId, amount, extra),
     onDone: refresh,
     successMessage: 'Monthly due updated',
-  });
-
-  const prefixGate = useMoneyOutOtp<{ prefix: string }>({
-    perform: (extra, { prefix }) => portalApi.setMemberCodePrefix(communityId, prefix, extra),
-    onDone: refresh,
-    successMessage: 'Member code prefix set',
   });
 
   const levyGate = useMoneyOutOtp<{ levyId: string; body: Record<string, unknown> }>({
@@ -163,38 +158,33 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
             subtitle={
               d.memberCodePrefix
                 ? `Members are known as ${d.memberCodePrefix}-261106-0001`
-                : 'Pick a prefix and members get their own identifier'
+                : 'Not set yet — members have no identifier of their own'
             }
           />
+          {/* Configured on the listing, with Joining, because a code is
+              issued the moment someone is admitted. Shown here because this
+              is where dues and levies reference members by it, and an
+              officer looking at one reasonably wonders about the other. */}
           <div className="px-5 py-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <Field label="Prefix" className="w-40">
-                <Input
-                  value={prefixDraft}
-                  onChange={(e) => setPrefixDraft(e.target.value.toUpperCase())}
-                  placeholder="KAKA"
-                  maxLength={8}
-                  disabled={prefixLocked}
-                  className="uppercase"
-                />
-              </Field>
-              <Button
-                disabled={prefixLocked || prefixDraft.trim().length < 2}
-                loading={prefixGate.pending}
-                onClick={() => void prefixGate.run({ prefix: prefixDraft.trim() })}
-                icon={<IdCard className="h-4 w-4" />}
-              >
-                Set prefix
-              </Button>
-            </div>
-            {/* Said before they try, not as a rejection after: once codes are
-                out, changing the prefix would leave members holding cards the
-                community no longer recognises. */}
-            <p className="mt-3 text-xs leading-5 text-slate-500">
-              {prefixLocked
-                ? `Locked — ${d.membersIssued} member code${d.membersIssued === 1 ? ' has' : 's have'} already been issued as ${d.memberCodePrefix}-…. Changing it now would leave those members holding codes the community no longer recognises.`
-                : 'Two to eight letters or digits. A member admitted on 6 Nov 2026 becomes PREFIX-261106-0001. Choose carefully — it locks once the first code is issued.'}
+            <p className="text-[13px] leading-5 text-slate-600">
+              {d.memberCodePrefix
+                ? `Every member admitted gets a code beginning ${d.memberCodePrefix}-.`
+                : 'Pick a prefix and each member gets their own identifier, on their card and in the app.'}
             </p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {prefixLocked
+                ? `${d.membersIssued} issued, so the prefix is now fixed.`
+                : 'It locks once the first code is issued.'}
+            </p>
+            <LinkButton
+              size="sm"
+              variant="secondary"
+              className="mt-3"
+              href={'/listing' as Route}
+              icon={<IdCard className="h-3.5 w-3.5" />}
+            >
+              {d.memberCodePrefix ? 'Review on the listing' : 'Set it on the listing'}
+            </LinkButton>
           </div>
         </Card>
       </div>
@@ -287,7 +277,6 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
       />
 
       <MoneyOutOtpDialog gate={duesGate} />
-      <MoneyOutOtpDialog gate={prefixGate} />
       <MoneyOutOtpDialog gate={levyGate} />
     </>
   );

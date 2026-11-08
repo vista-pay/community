@@ -346,6 +346,14 @@ export interface Listing {
     category: string | null;
     logoUrl: string | null;
   } | null;
+  /**
+   * The prefix members' codes are built from, and how many are out.
+   *
+   * Lives with the listing because a code is issued on admission, so it has
+   * to be decided before the first member is admitted — and it locks the
+   * moment one is.
+   */
+  memberCode: { prefix: string | null; issued: number };
   stats: { views: number; requests: number; approved: number };
 }
 
