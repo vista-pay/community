@@ -184,19 +184,29 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
                 header: 'Movement',
                 align: 'right',
                 hideOnMobile: true,
-                // What passed through, which the balance alone hides. An Ajo
-                // account that took 2,400 in and paid 2,400 out nets to zero
-                // and reads as untouched; a fine issued and then settled does
-                // the same. This is the column that tells them apart.
+                /**
+                 * What passed through, which the balance alone hides. An Ajo
+                 * account that took 2,400 in and paid 2,400 out nets to zero
+                 * and reads as untouched; a fine issued and then settled does
+                 * the same.
+                 *
+                 * Both sides shown rather than added together. Summing them
+                 * says 4,800 passed through an account that only ever handled
+                 * 2,400 — the same money counted on its way in and again on
+                 * its way out.
+                 */
                 cell: (a) => {
-                  const moved = Number(a.debits ?? 0) + Number(a.credits ?? 0);
-                  if (!moved) {
+                  const dr = Number(a.debits ?? 0);
+                  const cr = Number(a.credits ?? 0);
+                  if (!dr && !cr) {
                     return <span className="text-[12.5px] text-slate-300">Never used</span>;
                   }
                   return (
                     <span className="block">
                       <span className="tnum block text-[12.5px] text-slate-600">
-                        {money(String(moved), 'NGN')}
+                        {dr ? `Dr ${money(a.debits!, 'NGN')}` : null}
+                        {dr && cr ? <span className="text-slate-300"> · </span> : null}
+                        {cr ? `Cr ${money(a.credits!, 'NGN')}` : null}
                       </span>
                       <span className="block text-[11px] text-slate-400">
                         {a.entries} {a.entries === 1 ? 'entry' : 'entries'}
@@ -210,8 +220,8 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
                 header: 'Balance',
                 align: 'right',
                 cell: (a) => {
-                  const moved = Number(a.debits ?? 0) + Number(a.credits ?? 0);
-                  const settled = moved > 0 && Number(a.balance) === 0;
+                  const moved = Number(a.debits ?? 0) > 0 || Number(a.credits ?? 0) > 0;
+                  const settled = moved && Number(a.balance) === 0;
                   return (
                     <span
                       className={
