@@ -367,11 +367,11 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                 {[
                   { label: 'Opening', value: view.opening },
                   {
-                    label: `Total debits · ${effectOf(selected.type, 'debit').toLowerCase()}`,
+                    label: `Total ${effectOf(selected.type, 'debit').toLowerCase()}`,
                     value: view.debit,
                   },
                   {
-                    label: `Total credits · ${effectOf(selected.type, 'credit').toLowerCase()}`,
+                    label: `Total ${effectOf(selected.type, 'credit').toLowerCase()}`,
                     value: view.credit,
                   },
                   { label: 'Entries', value: String(view.lines.length), plain: true },

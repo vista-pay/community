@@ -81,6 +81,8 @@ import type {
   LoanRepaymentRow,
   PendingInvitation,
   LevyFrequency,
+  RendiAiConversationSummary,
+  RendiAiConversationDetail,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -94,6 +96,18 @@ export const portalApi = {
   markNavigationRead: (communityId: string, section: string) =>
     post<{ read: true }>(path(communityId, `/navigation/${section}/read`)),
   wallet: (communityId: string) => get<WalletData>(path(communityId, '/wallet')),
+
+  /** Whether Rendi AI has a model configured in this environment. */
+  rendiAiAvailability: (communityId: string) =>
+    get<{ enabled: boolean }>(path(communityId, '/rendi-ai/availability')),
+  rendiAiConversations: (communityId: string) =>
+    get<RendiAiConversationSummary[]>(path(communityId, '/rendi-ai/conversations')),
+  rendiAiConversation: (communityId: string, conversationId: string) =>
+    get<RendiAiConversationDetail>(
+      path(communityId, `/rendi-ai/conversations/${conversationId}`),
+    ),
+  deleteRendiAiConversation: (communityId: string, conversationId: string) =>
+    del<{ deleted: true }>(path(communityId, `/rendi-ai/conversations/${conversationId}`)),
 
   auditLogs: (communityId: string, page = 1, limit = 50) =>
     get<AuditEntry[]>(path(communityId, '/audit-logs'), { page, limit }),

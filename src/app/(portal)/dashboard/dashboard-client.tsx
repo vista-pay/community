@@ -75,6 +75,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
+          rendiId="dashboard-wallet"
           label="Operating balance"
           value={wallet ? money(wallet.available, wallet.currencyCode) : '—'}
           hint={
@@ -85,6 +86,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
           icon={<Wallet className="h-4 w-4" />}
         />
         <Stat
+          rendiId="dashboard-members"
           label="Active members"
           value={d.members.active}
           hint={
@@ -96,6 +98,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
           tone={d.members.pendingApplications ? 'warning' : 'default'}
         />
         <Stat
+          rendiId="dashboard-obligations"
           label="Contribution arrears"
           value={money(d.ajo.arrears)}
           hint={`${d.ajo.obligationsOutstanding} unpaid across ${d.ajo.groups} group${d.ajo.groups === 1 ? '' : 's'}`}
@@ -103,6 +106,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
           tone={isZeroMoney(d.ajo.arrears) ? 'default' : 'warning'}
         />
         <Stat
+          rendiId="dashboard-loans"
           label="Loans outstanding"
           value={money(d.lending.outstanding)}
           hint={
@@ -116,7 +120,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.85fr)]">
-        <Card>
+        <Card data-rendi-id="dashboard-activity">
           <CardHeader
             title="Application activity"
             subtitle={`${metrics.activityLast7Days} recorded action${metrics.activityLast7Days === 1 ? '' : 's'} in the last 7 days`}
@@ -188,7 +192,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" data-rendi-id="dashboard-approvals">
           <CardHeader
             title="Needs your attention"
             subtitle={`${attentionCount} item${attentionCount === 1 ? '' : 's'} need follow-up from an officer`}
@@ -197,7 +201,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
         </Card>
 
         <div className="space-y-6">
-          <Card>
+          <Card data-rendi-id="dashboard-meeting">
             <CardHeader title="Next meeting" />
             {d.upcomingMeeting ? (
               <div className="px-5 py-4">

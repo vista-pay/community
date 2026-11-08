@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { Route } from 'next';
@@ -59,6 +59,8 @@ import { portalApi } from '@/services/portal';
 import type { DashboardData } from '@/types';
 import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
+import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
+import { RendiAiTrigger } from '@/components/rendi-ai/rendi-ai-trigger';
 
 type NavigationCounts = NonNullable<DashboardData['navigationCounts']>;
 type NavCountKey = keyof NavigationCounts;
@@ -210,6 +212,63 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [community, refreshNavigation]);
 
+  // Asked once rather than read from a NEXT_PUBLIC_ flag, so the dock cannot
+  // appear in an environment where no model is configured and every question
+  // would fail.
+  const { data: rendiAi } = useQuery<{ enabled: boolean } | null>(
+    () => (community ? portalApi.rendiAiAvailability(community.id) : Promise.resolve(null)),
+    [community?.id],
+    { enabled: Boolean(community) },
+  );
+  const rendiAiEnabled = Boolean(rendiAi?.enabled);
+
+  /**
+   * Opening Rendi AI collapses the left sidebar: two sidebars plus content is
+   * more chrome than width allows, and the nav is the one an officer needs
+   * least while asking a question. Their own collapse preference is
+   * remembered and restored on close, so the panel borrows the space rather
+   * than permanently rearranging their workspace.
+   */
+  const [aiOpen, setAiOpen] = useState(false);
+  const collapsedBeforeAi = useRef(false);
+
+  const toggleAi = () => {
+    setAiOpen((wasOpen) => {
+      if (!wasOpen) {
+        collapsedBeforeAi.current = collapsed;
+        setCollapsed(true);
+      } else {
+        setCollapsed(collapsedBeforeAi.current);
+      }
+      return !wasOpen;
+    });
+  };
+
+  const closeAi = () => {
+    if (!aiOpen) return;
+    setCollapsed(collapsedBeforeAi.current);
+    setAiOpen(false);
+  };
+
+  /**
+   * The nav rail and Rendi AI compete for the same width, so expanding one
+   * dismisses the other. An officer who reaches for the nav while the panel
+   * is open has told us which of the two they want; leaving both open would
+   * squeeze the page they are actually reading down to nothing.
+   *
+   * Collapsing the nav is not treated the same way: that frees space rather
+   * than taking it, so the panel is left alone.
+   */
+  const toggleSidebar = () => {
+    setCollapsed((wasCollapsed) => {
+      const next = !wasCollapsed;
+      // Their deliberate choice becomes the state Rendi AI restores to.
+      collapsedBeforeAi.current = next;
+      if (!next && aiOpen) setAiOpen(false);
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!community) return;
     const item = NAV.flatMap((group) => group.items)
@@ -274,7 +333,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <Sidebar collapsed={collapsed} counts={navigationCounts ?? undefined} />
         <button
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={toggleSidebar}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="absolute bottom-4 right-3 flex h-8 w-8 items-center justify-center rounded-lg text-navy-300 hover:bg-white/10 hover:text-white focus-ring"
         >
@@ -306,11 +365,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <div className={cn('transition-[padding] duration-200', collapsed ? 'md:pl-[72px]' : 'md:pl-64')}>
+      <div
+        className={cn(
+          'transition-[padding] duration-200',
+          collapsed ? 'md:pl-[72px]' : 'md:pl-64',
+          // Only from xl: narrower than that and reflowing would leave the
+          // page unreadably squeezed, so the panel overlays instead.
+          aiOpen && 'xl:pr-[380px]',
+        )}
+      >
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur">
           <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
             <button
-              onClick={() => setMobileOpen(true)}
+              onClick={() => {
+                setMobileOpen(true);
+                closeAi();
+              }}
               aria-label="Open menu"
               className="-ml-1 rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden"
             >
@@ -321,6 +391,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <CommunitySwitcher />
             <div className="flex-1" />
+            {rendiAiEnabled && <RendiAiTrigger open={aiOpen} onToggle={toggleAi} />}
             <NotificationsMenu />
             <ProfileMenu />
           </div>
@@ -329,6 +400,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         {unverified && <VerificationBanner />}
 
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+
+        {/* Rendi AI rides along on every portal page: it is only useful while
+            an officer is mid-task, and it needs the current route to answer
+            "what is this number". Mounted whenever configured and kept
+            off-screen while closed, so a conversation survives being
+            dismissed to look at the page. */}
+        {rendiAiEnabled && (
+          <RendiAiPanel communityId={community?.id} open={aiOpen} onClose={closeAi} />
+        )}
       </div>
     </div>
   );

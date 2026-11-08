@@ -1587,3 +1587,20 @@ export interface MigrationStatus {
   };
   batches: MigrationBatch[];
 }
+
+/** One stored Rendi AI conversation, as the session list shows it. */
+export interface RendiAiConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RendiAiConversationDetail extends RendiAiConversationSummary {
+  messages: Array<{
+    id: string;
+    role: "user" | "model";
+    text: string;
+    createdAt: string;
+  }>;
+}

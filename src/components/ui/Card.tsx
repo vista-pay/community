@@ -19,13 +19,19 @@ export function CardHeader({ title, subtitle, action, className }: { title: Reac
   );
 }
 
-export function Stat({ label, value, hint, icon, tone = 'default', footer, onClick }: {
+export function Stat({ label, value, hint, icon, tone = 'default', footer, onClick, rendiId }: {
   label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: 'default' | 'warning' | 'danger' | 'positive'; footer?: ReactNode; onClick?: () => void;
+  /**
+   * Marks this card as a region Rendi AI may scroll to or outline. Set on the
+   * card element itself rather than a wrapper, so adding an anchor cannot
+   * change the grid cell a Stat occupies or its height against its siblings.
+   */
+  rendiId?: string;
 }) {
   const toneRing = { default: 'bg-navy-50 text-navy-700', warning: 'bg-amber-50 text-amber-700', danger: 'bg-red-50 text-red-700', positive: 'bg-brand-50 text-brand-700' }[tone];
   const Comp = onClick ? 'button' : 'div';
   return (
-    <Comp onClick={onClick} className={cn('group flex flex-col rounded-xl border border-slate-200/80 bg-white p-4 text-left shadow-card', onClick && 'hover:border-slate-300 focus-ring transition')}>
+    <Comp onClick={onClick} data-rendi-id={rendiId} className={cn('group flex flex-col rounded-xl border border-slate-200/80 bg-white p-4 text-left shadow-card', onClick && 'hover:border-slate-300 focus-ring transition')}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-[13px] font-medium text-slate-600">{label}</p>
         {icon && <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', toneRing)}>{icon}</span>}
