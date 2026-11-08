@@ -364,6 +364,17 @@ export interface BookAccount {
   isSystem: boolean;
   isActive: boolean;
   balance: Money;
+  /**
+   * The two sides, not just the net.
+   *
+   * An account money passed through nets to zero — Ajo collections taking
+   * 2,400 in and paying 2,400 out, a fine issued and then settled — and a
+   * bare 0.00 reads as "nothing ever happened here". These tell the two
+   * apart. Optional because an older API will not send them.
+   */
+  debits?: Money;
+  credits?: Money;
+  entries?: number;
 }
 
 export interface PostingRule {
@@ -625,6 +636,7 @@ export interface SavingsProduct {
   noticeDays: number;
   currencyCode: string;
   isActive: boolean;
+  termMonths: number;
   _count?: { accounts: number };
 }
 
@@ -633,8 +645,16 @@ export interface SavingsAccountRow {
   accountNumber: string;
   memberId: string;
   memberName: string;
-  product: { id: string; name: string; policy: SavingsWithdrawalPolicy };
+  product: { id: string; name: string; policy: SavingsWithdrawalPolicy; termMonths: number };
   balance: Money;
+  principalAmount: Money;
+  projectedInterest: Money;
+  accruedInterest: Money;
+  monthlyAmount: Money;
+  contributionsMade: number;
+  nextContributionAt: IsoDate | null;
+  autoDebit: boolean;
+  maturityAt: IsoDate | null;
   status: 'ACTIVE' | 'DORMANT' | 'CLOSED';
   openedAt: IsoDate;
 }
@@ -647,6 +667,10 @@ export interface SavingsWithdrawalRequestRow {
   accountNumber: string;
   accountBalance: string;
   amount: string;
+  interestAmount: string;
+  payoutAmount: string;
+  isEarly: boolean;
+  maturityAt: IsoDate | null;
   note: string | null;
   status: 'PENDING' | 'PAID' | 'REJECTED';
   reviewNote: string | null;
@@ -675,8 +699,17 @@ export interface SavingsStatement {
     policy: SavingsWithdrawalPolicy;
     noticeDays: number;
     minBalance: Money;
+    interestRate: string;
+    termMonths: number;
   };
   balance: Money;
+  principalAmount: Money;
+  projectedInterest: Money;
+  accruedInterest: Money;
+  monthlyAmount: Money;
+  contributionsMade: number;
+  nextContributionAt: IsoDate | null;
+  maturityAt: IsoDate | null;
   status: string;
   transactions: Array<{
     id: string;

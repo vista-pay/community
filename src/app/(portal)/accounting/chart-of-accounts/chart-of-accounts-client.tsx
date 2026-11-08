@@ -41,6 +41,15 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
     return map;
   }, [accounts]);
 
+  /** Accounts carrying at least one posting, per class. */
+  const used = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of accounts) {
+      if ((a.entries ?? 0) > 0) map.set(a.type, (map.get(a.type) ?? 0) + 1);
+    }
+    return map;
+  }, [accounts]);
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return accounts
@@ -90,6 +99,11 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
               {counts.get(c.type) ?? 0}
               <span className="ml-1 text-xs font-normal text-slate-500">accounts</span>
             </p>
+            {/* How many are actually carrying postings. "9 accounts" says
+                nothing about whether any of them has ever been used. */}
+            <p className="mt-0.5 text-[11.5px] text-slate-500">
+              {used.get(c.type) ?? 0} in use
+            </p>
           </button>
         ))}
       </div>
@@ -97,7 +111,17 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
       <Card>
         <CardHeader
           title={tab === 'all' ? 'All accounts' : ACCOUNT_CLASSES.find((c) => c.type === tab)?.plural}
-          subtitle="Select an account to see every posting against it."
+          subtitle={
+            // Named where it lives, because "where is savings?" on the asset
+            // tab is the commonest question a chart of accounts provokes:
+            // member savings is money the community owes, so it sits on the
+            // other side. The cash it arrived as is here, in the bank.
+            tab === 'ASSET'
+              ? 'What the community holds. Member savings is not here — it is money owed to members, under Liabilities; the cash behind it sits in the bank accounts above.'
+              : tab === 'LIABILITY'
+                ? 'What the community owes. Member savings, Ajo money held for a round, and the welfare fund all sit here.'
+                : 'Select an account to see every posting against it.'
+          }
           action={
             <Input
               value={search}
@@ -156,25 +180,66 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
                 cell: (a) => <Badge tone="slate">{a.type}</Badge>,
               },
               {
+                key: 'movement',
+                header: 'Movement',
+                align: 'right',
+                hideOnMobile: true,
+                // What passed through, which the balance alone hides. An Ajo
+                // account that took 2,400 in and paid 2,400 out nets to zero
+                // and reads as untouched; a fine issued and then settled does
+                // the same. This is the column that tells them apart.
+                cell: (a) => {
+                  const moved = Number(a.debits ?? 0) + Number(a.credits ?? 0);
+                  if (!moved) {
+                    return <span className="text-[12.5px] text-slate-300">Never used</span>;
+                  }
+                  return (
+                    <span className="block">
+                      <span className="tnum block text-[12.5px] text-slate-600">
+                        {money(String(moved), 'NGN')}
+                      </span>
+                      <span className="block text-[11px] text-slate-400">
+                        {a.entries} {a.entries === 1 ? 'entry' : 'entries'}
+                      </span>
+                    </span>
+                  );
+                },
+              },
+              {
                 key: 'balance',
                 header: 'Balance',
                 align: 'right',
-                cell: (a) => (
-                  <span
-                    className={
-                      Number(a.balance) < 0 ? 'tnum font-semibold text-red-600' : 'tnum'
-                    }
-                    // A balance on the wrong side of its own account is a
-                    // signal, not a formatting quirk.
-                    title={
-                      Number(a.balance) < 0
-                        ? 'Negative for this account class — worth investigating'
-                        : undefined
-                    }
-                  >
-                    {money(a.balance, 'NGN')}
-                  </span>
-                ),
+                cell: (a) => {
+                  const moved = Number(a.debits ?? 0) + Number(a.credits ?? 0);
+                  const settled = moved > 0 && Number(a.balance) === 0;
+                  return (
+                    <span
+                      className={
+                        Number(a.balance) < 0
+                          ? 'tnum font-semibold text-red-600'
+                          : settled
+                            ? 'tnum text-slate-500'
+                            : 'tnum'
+                      }
+                      // A balance on the wrong side of its own account is a
+                      // signal, not a formatting quirk. Zero after real
+                      // movement is a different statement from zero because
+                      // nothing ever happened.
+                      title={
+                        Number(a.balance) < 0
+                          ? 'Negative for this account class — worth investigating'
+                          : settled
+                            ? 'Money passed through and settled — see Movement'
+                            : undefined
+                      }
+                    >
+                      {money(a.balance, 'NGN')}
+                      {settled ? (
+                        <span className="ml-1 text-[11px] text-slate-400">settled</span>
+                      ) : null}
+                    </span>
+                  );
+                },
               },
               {
                 key: 'actions',
