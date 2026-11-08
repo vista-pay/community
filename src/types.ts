@@ -432,7 +432,7 @@ export interface Statements {
     balance: Money;
   }>;
   modules: Array<{
-    key: 'contributions' | 'savings' | 'loans' | 'welfare' | 'opportunities';
+    key: 'contributions' | 'dues' | 'savings' | 'loans' | 'welfare' | 'opportunities';
     label: string;
     accountCodes: string[];
     debit: Money;
@@ -1401,6 +1401,32 @@ export interface DuesLeviesOverview {
   levies: CommunityLevy[];
   /** Dues plus every monthly levy — what an active member owes each month. */
   monthlyTotalPerMember: Money;
+}
+
+export interface ChargeCollectionMember {
+  memberId: string;
+  memberCode: string | null;
+  name: string;
+  email: string;
+  amount: Money;
+  status: 'PAID' | 'UNPAID';
+  paidAt: IsoDate | null;
+}
+
+export interface ChargeCollection {
+  id: string;
+  kind: 'DUES' | 'LEVY';
+  name: string;
+  period: string;
+  amount: Money;
+  dueAt: IsoDate | null;
+  paid: number;
+  unpaid: number;
+  members: ChargeCollectionMember[];
+}
+
+export interface DuesLeviesCollections {
+  charges: ChargeCollection[];
 }
 
 // ───────────────────────── Member invitations ─────────────────────────
