@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Lock, Pencil, Plus, Wallet } from 'lucide-react';
+import { ChevronRight, Lock, Pencil, Plus, Wallet } from 'lucide-react';
+import type { Column } from '@/components/ui';
 import {
   Badge,
   Card,
@@ -16,7 +17,7 @@ import {
 import { useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { portalApi } from '@/services/portal';
-import { money } from '@/lib/format';
+import { cn, money } from '@/lib/format';
 import type { Route } from 'next';
 import type { BookAccount, BookAccountType, PostingRule } from '@/types';
 import { ACCOUNT_CLASSES } from './account-classes';
@@ -28,6 +29,8 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
   const communityId = useCommunityId();
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
+  /** Unused accounts start folded; they are the thing being scrolled past. */
+  const [showUnused, setShowUnused] = useState(false);
   const { data } = useQuery<{ accounts: BookAccount[]; postingRules: PostingRule[] }>(
     () => portalApi.accounts(communityId),
     [communityId],
@@ -50,13 +53,43 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
     return map;
   }, [accounts]);
 
-  const rows = useMemo(() => {
+  /**
+   * The chart split by whether anything has ever posted to it.
+   *
+   * A seeded chart is mostly empty — a community that runs no Ajo and owns
+   * no equipment still carries accounts for both — so ordering strictly by
+   * code buried the dozen accounts with real figures among thirty that have
+   * never been touched.
+   *
+   * Code order is kept *within* each part, because that is how a chart of
+   * accounts is read and an auditor expects 1010 before 1100. The unused
+   * ones are not hidden, only moved and folded: an account that exists and
+   * has never been used is a fact worth being able to see.
+   */
+  const { inUse, unused } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return accounts
+    const matching = accounts
       .filter((a) => (tab === 'all' ? true : a.type === tab))
-      .filter((a) => !q || a.code.includes(q) || a.name.toLowerCase().includes(q))
+      .filter(
+        (a) =>
+          !q ||
+          a.code.includes(q) ||
+          a.name.toLowerCase().includes(q) ||
+          a.group.toLowerCase().includes(q),
+      )
       .sort((a, b) => a.code.localeCompare(b.code));
+
+    return {
+      inUse: matching.filter((a) => (a.entries ?? 0) > 0),
+      unused: matching.filter((a) => (a.entries ?? 0) === 0),
+    };
   }, [accounts, tab, search]);
+
+  // Searching is a deliberate hunt, often for an account that has never been
+  // posted to. Folding the match away would answer "not found" to a question
+  // the page can answer, so a search opens the fold regardless.
+  const searching = search.trim().length > 0;
+  const unusedOpen = showUnused || searching;
 
   return (
     <>
@@ -132,17 +165,66 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
             />
           }
         />
-        {rows.length === 0 ? (
+        {inUse.length === 0 && unused.length === 0 ? (
           <EmptyState
             icon={<Wallet className="h-5 w-5" />}
             title="No accounts match"
             body="Clear the search, or pick a different account class."
           />
         ) : (
-          <DataTable
-            rows={rows}
-            rowKey={(a) => a.id}
-            columns={[
+          <>
+            {inUse.length > 0 ? (
+              <DataTable rows={inUse} rowKey={(a) => a.id} columns={ACCOUNT_COLUMNS} />
+            ) : searching ? null : (
+              <EmptyState
+                icon={<Wallet className="h-5 w-5" />}
+                title="Nothing posted here yet"
+                body="Accounts appear here as soon as something posts against them."
+              />
+            )}
+
+            {/* Moved and folded, not hidden: an account that exists and has
+                never been used is a fact worth being able to see, just not
+                one worth scrolling past thirty times to reach the figures. */}
+            {unused.length > 0 ? (
+              <div className="border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowUnused(!unusedOpen)}
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-slate-50 focus-ring"
+                >
+                  <ChevronRight
+                    className={cn(
+                      'h-4 w-4 text-slate-400 transition-transform',
+                      unusedOpen && 'rotate-90',
+                    )}
+                  />
+                  <span className="flex-1 text-[13px] font-medium text-navy-900">
+                    {unused.length} account{unused.length === 1 ? '' : 's'} never used
+                  </span>
+                  <span className="text-[12.5px] text-slate-500">
+                    {unusedOpen ? 'Hide' : 'Show'}
+                  </span>
+                </button>
+                {unusedOpen ? (
+                  <DataTable rows={unused} rowKey={(a) => a.id} columns={ACCOUNT_COLUMNS} />
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
+      </Card>
+    </>
+  );
+}
+
+/**
+ * One definition, used by both the in-use table and the folded one below it.
+ *
+ * At module scope because nothing here reads component state — two copies
+ * would be two chances for the columns to drift apart.
+ */
+const ACCOUNT_COLUMNS: Column<BookAccount>[] = [
               {
                 key: 'code',
                 header: 'Code',
@@ -266,10 +348,4 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
                   </LinkButton>
                 ),
               },
-            ]}
-          />
-        )}
-      </Card>
-    </>
-  );
-}
+];
