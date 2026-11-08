@@ -2,7 +2,9 @@
 
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useState } from 'react';
-import { AlertTriangle, Landmark, Lock, PiggyBank, Plus } from 'lucide-react';
+import Link from 'next/link';
+import type { Route } from 'next';
+import { AlertTriangle, ArrowRight, Landmark, Lock, PiggyBank, Plus } from 'lucide-react';
 import {
   AmountInput,
   Badge,
@@ -27,7 +29,8 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
-import { date, humanise, money } from '@/lib/format';
+import { date, money } from '@/lib/format';
+import { savingsProductName } from '@/lib/savings';
 import type { MemberRow, SavingsAccountRow, SavingsOverview, SavingsProduct } from '@/types';
 
 type Tab = 'accounts' | 'products';
@@ -42,7 +45,6 @@ export function SavingsClient({
   const [openAccount, setOpenAccount] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [entryFor, setEntryFor] = useState<SavingsAccountRow | null>(null);
-  const [statementFor, setStatementFor] = useState<SavingsAccountRow | null>(null);
 
   const overview = useQuery(() => portalApi.savingsAccounts(communityId), [communityId], {
     initial: initial.overview,
@@ -68,7 +70,7 @@ export function SavingsClient({
               }
               onClick={() => setOpenAccount(true)}
             >
-              Open an account
+              Open member account
             </Button>
           ) : (
             <LinkButton href={'/savings/new' as never} icon={<Plus className="h-4 w-4" />}>New product</LinkButton>
@@ -141,7 +143,7 @@ export function SavingsClient({
                   header: 'Product',
                   cell: (a) => (
                     <span className="flex items-center gap-2">
-                      {a.product.name}
+                      {savingsProductName(a.product.name)}
                       {a.product.policy === 'LOCKED' && (
                         <Lock className="h-3.5 w-3.5 text-slate-400" aria-label="Locked" />
                       )}
@@ -149,6 +151,20 @@ export function SavingsClient({
                   ),
                 },
                 { key: 'balance', header: 'Balance', align: 'right', cell: (a) => money(a.balance) },
+                {
+                  key: 'monthly',
+                  header: 'Monthly',
+                  align: 'right',
+                  cell: (a) => (Number(a.monthlyAmount) > 0 ? money(a.monthlyAmount) : '—'),
+                },
+                {
+                  key: 'progress',
+                  header: 'Progress',
+                  cell: (a) =>
+                    a.product.termMonths > 0
+                      ? `${a.contributionsMade} of ${a.product.termMonths}`
+                      : 'Open-ended',
+                },
                 {
                   key: 'status',
                   header: 'Status',
@@ -166,11 +182,15 @@ export function SavingsClient({
                   align: 'right',
                   cell: (a) => (
                     <span className="flex justify-end gap-1.5">
-                      <Button size="xs" variant="ghost" onClick={() => setStatementFor(a)}>
+                      <LinkButton
+                        size="xs"
+                        variant="ghost"
+                        href={`/savings/accounts/${a.id}/statement` as Route}
+                      >
                         Statement
-                      </Button>
+                      </LinkButton>
                       <Button size="xs" variant="secondary" onClick={() => setEntryFor(a)}>
-                        Record
+                        Record transaction
                       </Button>
                     </span>
                   ),
@@ -200,21 +220,13 @@ export function SavingsClient({
               </Card>
             ) : (
               (products.data ?? []).map((p) => (
-                <Card key={p.id}>
-                  <CardHeader
-                    title={p.name}
-                    subtitle={p.description ?? undefined}
-                    action={
-                      <Badge tone={p.withdrawalPolicy === 'LOCKED' ? 'amber' : 'green'}>
-                        {p.withdrawalPolicy === 'LOCKED'
-                          ? 'No withdrawals'
-                          : p.withdrawalPolicy === 'NOTICE'
-                            ? `${p.noticeDays} days notice`
-                            : 'Withdraw anytime'}
-                      </Badge>
-                    }
-                  />
-                  <dl className="grid grid-cols-3 gap-4 px-5 py-4 text-[13px]">
+                <Link key={p.id} href={`/savings/products/${p.id}` as Route} className="group rounded-xl focus-ring">
+                  <Card className="h-full overflow-hidden transition-all group-hover:-translate-y-0.5 group-hover:border-brand-200 group-hover:shadow-md">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">
+                      <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate font-semibold text-navy-900">{savingsProductName(p.name)}</h2><Badge tone={p.isActive ? 'green' : 'amber'}>{p.isActive ? 'Active' : 'Paused'}</Badge></div><p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-slate-500">{p.description || 'No description added yet.'}</p></div>
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-50 text-slate-500 transition-colors group-hover:bg-brand-50 group-hover:text-brand-700"><ArrowRight className="h-4 w-4" /></span>
+                    </div>
+                  <dl className="grid grid-cols-4 gap-4 px-5 py-4 text-[13px]">
                     <div>
                       <dt className="text-xs text-slate-500">Interest</dt>
                       <dd className="font-medium text-navy-900">
@@ -226,11 +238,17 @@ export function SavingsClient({
                       <dd className="font-medium text-navy-900">{money(p.minBalance)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-slate-500">Accounts</dt>
-                      <dd className="font-medium text-navy-900">{p._count?.accounts ?? 0}</dd>
+                      <dt className="text-xs text-slate-500">Withdrawals</dt>
+                      <dd className="font-medium text-navy-900">{p.withdrawalPolicy === 'LOCKED' ? 'Locked' : p.withdrawalPolicy === 'NOTICE' ? `${p.noticeDays}d notice` : 'Any time'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Duration</dt>
+                      <dd className="font-medium text-navy-900">{p.termMonths} months</dd>
                     </div>
                   </dl>
-                </Card>
+                  <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3 text-xs font-semibold text-brand-700">View settings and edit</div>
+                  </Card>
+                </Link>
               ))
             )}
           </div>
@@ -263,11 +281,6 @@ export function SavingsClient({
         }}
       />
 
-      <StatementModal
-        account={statementFor}
-        communityId={communityId}
-        onClose={() => setStatementFor(null)}
-      />
     </>
   );
 }
@@ -310,6 +323,7 @@ function OpenAccountModal({
       open={open}
       onClose={onClose}
       title="Open a savings account"
+      description="Assign a savings product to a member. The new account starts with a zero balance."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -320,7 +334,7 @@ function OpenAccountModal({
             loading={create.pending}
             onClick={() => void create.run()}
           >
-            Open account
+            Open member account
           </Button>
         </>
       }
@@ -346,7 +360,7 @@ function OpenAccountModal({
               .filter((p) => p.isActive)
               .map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {savingsProductName(p.name)}
                 </option>
               ))}
           </Select>
@@ -367,38 +381,37 @@ function ProductModal({
   communityId: string;
   onDone: () => Promise<void>;
 }) {
-  const { toast } = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [interestRate, setInterestRate] = useState('0');
   const [minBalance, setMinBalance] = useState('0');
   const [withdrawalPolicy, setWithdrawalPolicy] = useState('LOCKED');
   const [noticeDays, setNoticeDays] = useState('30');
+  const [termMonths, setTermMonths] = useState('3');
 
-  const create = useMutation(
-    () =>
-      portalApi.createSavingsProduct(communityId, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        // Entered as a percentage; stored as the fraction the API expects.
-        interestRate: String(Number(interestRate) / 100),
-        minBalance,
-        withdrawalPolicy,
-        noticeDays: withdrawalPolicy === 'NOTICE' ? Number(noticeDays) : 0,
-      }),
-    {
-      onSuccess: async () => {
-        toast('Product created', 'success');
-        setName('');
-        setDescription('');
-        onClose();
-        await onDone();
-      },
-      onError: (message) => toast('Could not create the product', 'error', message),
+  const create = useMoneyOutOtp<Record<string, unknown>>({
+    perform: (extra, payload) => portalApi.createSavingsProduct(communityId, payload, extra),
+    onDone: async () => {
+      setName('');
+      setDescription('');
+      onClose();
+      await onDone();
     },
-  );
+    successMessage: 'Savings product created',
+  });
+
+  const submit = () => create.run({
+    name: name.trim(),
+    description: description.trim() || undefined,
+    interestRate: String(Number(interestRate) / 100),
+    minBalance,
+    withdrawalPolicy,
+    noticeDays: withdrawalPolicy === 'NOTICE' ? Number(noticeDays) : 0,
+    termMonths: Number(termMonths),
+  });
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -411,7 +424,7 @@ function ProductModal({
           <Button
             disabled={name.trim().length < 2}
             loading={create.pending}
-            onClick={() => void create.run()}
+            onClick={() => void submit()}
           >
             Create
           </Button>
@@ -419,8 +432,6 @@ function ProductModal({
       }
     >
       <div className="space-y-4">
-        {create.error && <Callout tone="danger">{create.error}</Callout>}
-
         <Field label="Name" htmlFor="sp-name" required>
           <Input
             id="sp-name"
@@ -456,6 +467,10 @@ function ProductModal({
           </Field>
         </div>
 
+        <Field label="Duration" htmlFor="sp-duration" required>
+          <Input id="sp-duration" type="number" min="1" max="120" value={termMonths} onChange={(e) => setTermMonths(e.target.value)} suffix="months" />
+        </Field>
+
         <Field
           label="Withdrawals"
           htmlFor="sp-policy"
@@ -487,6 +502,8 @@ function ProductModal({
         )}
       </div>
     </Modal>
+    <MoneyOutOtpDialog gate={create} />
+    </>
   );
 }
 
@@ -535,7 +552,7 @@ function EntryModal({
       open
       onClose={onClose}
       title={`${account.memberName} — ${account.accountNumber}`}
-      description={`Balance ${money(account.balance)} · ${account.product.name}`}
+      description={`Balance ${money(account.balance)} · ${savingsProductName(account.product.name)}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -546,7 +563,7 @@ function EntryModal({
             loading={record.pending}
             onClick={() => void record.run()}
           >
-            Record
+            Record transaction
           </Button>
         </>
       }
@@ -569,7 +586,7 @@ function EntryModal({
 
         {locked && (
           <Callout tone="warning" title="This product does not permit withdrawals">
-            {account.product.name} is locked. Change the product&apos;s withdrawal policy before
+            {savingsProductName(account.product.name)} is locked. Change the product&apos;s withdrawal policy before
             releasing funds — the rule is what members agreed to.
           </Callout>
         )}
@@ -608,86 +625,6 @@ function EntryModal({
           <Textarea id="se-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </div>
-    </Modal>
-  );
-}
-
-function StatementModal({
-  account,
-  communityId,
-  onClose,
-}: {
-  account: SavingsAccountRow | null;
-  communityId: string;
-  onClose: () => void;
-}) {
-  const { data, loading } = useQuery(
-    () => portalApi.savingsStatement(communityId, account!.id),
-    [communityId, account?.id],
-    { enabled: Boolean(account) },
-  );
-
-  if (!account) return null;
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      size="lg"
-      title={`Statement — ${account.memberName}`}
-      description={account.accountNumber}
-    >
-      {loading && !data ? (
-        <EmptyState compact title="Loading" body="Fetching the statement." />
-      ) : !data ? (
-        <EmptyState compact title="Could not load" body="Try again in a moment." />
-      ) : (
-        <>
-          <div className="mb-4 rounded-lg bg-slate-50 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[13px] text-slate-600">Current balance</span>
-              <span className="tnum text-base font-semibold text-navy-900">
-                {money(data.balance)}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              {data.product.name} ·{' '}
-              {data.product.policy === 'LOCKED'
-                ? 'withdrawals not permitted'
-                : data.product.policy === 'NOTICE'
-                  ? `${data.product.noticeDays} days notice`
-                  : 'withdraw any time'}
-            </p>
-          </div>
-
-          {data.transactions.length === 0 ? (
-            <EmptyState compact title="Nothing recorded yet" body="Entries appear here as they are recorded." />
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {data.transactions.map((t) => (
-                <li key={t.id} className="flex items-center gap-3 py-2.5">
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] text-navy-900">{humanise(t.type)}</span>
-                    <span className="block text-xs text-slate-500">
-                      {date(t.at, 'datetime')} · {t.reference}
-                    </span>
-                    {t.note && <span className="block text-xs italic text-slate-500">{t.note}</span>}
-                  </span>
-                  <span className="text-right">
-                    <span className="tnum block text-[13px] font-medium text-navy-900">
-                      {t.type === 'WITHDRAWAL' ? '−' : '+'}
-                      {money(t.amount)}
-                    </span>
-                    <span className="tnum block text-xs text-slate-500">
-                      {money(t.balanceAfter)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
     </Modal>
   );
 }
@@ -737,13 +674,20 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-navy-900">
-                  {r.memberName} · {money(r.amount)}
+                  {r.memberName} · {money(r.payoutAmount || r.amount)} payout
                   {r.amount === r.accountBalance && (
                     <Badge tone="amber" className="ml-2">Full withdrawal</Badge>
                   )}
+                  <Badge tone={r.isEarly ? 'amber' : 'green'} className="ml-2">
+                    {r.isEarly ? 'Early exit · no return' : 'Matured'}
+                  </Badge>
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {r.productName} · balance {money(r.accountBalance)} · asked {date(r.requestedAt)}
+                  {savingsProductName(r.productName)} · principal {money(r.amount)}
+                  {!r.isEarly && Number(r.interestAmount) > 0
+                    ? ` + ${money(r.interestAmount)} return`
+                    : ''}{' '}
+                  · asked {date(r.requestedAt)}
                 </p>
                 {r.note && <p className="mt-1 text-xs italic text-slate-600">“{r.note}”</p>}
               </div>
@@ -753,7 +697,7 @@ function WithdrawalRequestsCard({ onSettled }: { onSettled: () => void }) {
                   disabled={decide.pending}
                   onClick={() => void decide.run({ requestId: r.id, approve: true })}
                 >
-                  Approve & pay
+                  {r.isEarly ? 'Release principal' : 'Release principal + return'}
                 </Button>
                 <Button
                   size="xs"

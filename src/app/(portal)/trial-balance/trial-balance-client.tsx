@@ -1,7 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeftRight, CheckCircle2, Download, Scale } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeftRight,
+  CheckCircle2,
+  Download,
+  Search,
+  Scale,
+} from 'lucide-react';
 import {
   Badge,
   Button,
@@ -86,6 +94,15 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
   const periodLabel = from || to
     ? `${from || 'Books opened'} to ${to || 'Today'}`
     : 'All posted entries';
+  const filtersActive = Boolean(from || to || query || type !== 'ALL' || showZero);
+  const visibleTotals = rows.reduce(
+    (totals, row) => ({
+      debit: totals.debit + Number(row.debit || 0),
+      credit: totals.credit + Number(row.credit || 0),
+      balance: totals.balance + Number(row.balance || 0),
+    }),
+    { debit: 0, credit: 0, balance: 0 },
+  );
 
   const exportRows = () =>
     downloadCsv(
@@ -105,7 +122,8 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
     <>
       <PageHeader
         title="Trial balance"
-        subtitle="Movement and net balance for every account. Balancing proves the entries are consistent, not that they are complete."
+        breadcrumb={<span>Accounting / Trial balance</span>}
+        subtitle="Review debit and credit movement, closing balances, and the accounts supporting each community service."
         actions={
           <Button
             variant="secondary"
@@ -152,24 +170,42 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Balance status"
-          value={data.trialBalance.balanced ? 'Balanced' : 'Out of balance'}
-          hint={
-            data.trialBalance.balanced
-              ? 'Every entry posts equal debits and credits. This does not prove everything was recorded.'
-              : periodLabel
-          }
-          icon={
-            data.trialBalance.balanced ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <AlertTriangle className="h-4 w-4" />
-            )
-          }
-          tone={data.trialBalance.balanced ? 'positive' : 'danger'}
-        />
+      <Card className={data.trialBalance.balanced ? 'overflow-hidden border-brand-200' : 'overflow-hidden border-red-200'}>
+        <div className="grid lg:grid-cols-[minmax(260px,0.85fr)_1.15fr]">
+          <div className={data.trialBalance.balanced ? 'bg-brand-50/70 px-5 py-5 sm:px-6' : 'bg-red-50 px-5 py-5 sm:px-6'}>
+            <div className="flex items-start gap-3">
+              <span className={data.trialBalance.balanced ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700' : 'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700'}>
+                {data.trialBalance.balanced ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Book status</p>
+                <h2 className="mt-1 text-xl font-semibold tracking-tight text-navy-900">
+                  {data.trialBalance.balanced ? 'Debits and credits balance' : 'Books are out of balance'}
+                </h2>
+                <p className="mt-1.5 text-[13px] leading-5 text-slate-600">
+                  {data.trialBalance.balanced
+                    ? 'Every posted entry has an equal debit and credit. Review the balances below for completeness.'
+                    : `The two sides differ by ${money(difference)}. Review recent adjustments before closing the period.`}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 bg-white lg:border-l lg:border-t-0">
+            <div className="px-5 py-5 sm:px-6">
+              <p className="text-xs font-medium text-slate-500">Total debits</p>
+              <p className="tnum mt-1.5 text-xl font-semibold tracking-tight text-navy-900">{money(data.trialBalance.debit)}</p>
+              <p className="mt-1 text-xs text-slate-500">Posted movement</p>
+            </div>
+            <div className="px-5 py-5 sm:px-6">
+              <p className="text-xs font-medium text-slate-500">Total credits</p>
+              <p className="tnum mt-1.5 text-xl font-semibold tracking-tight text-navy-900">{money(data.trialBalance.credit)}</p>
+              <p className="mt-1 text-xs text-slate-500">Posted movement</p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Stat
           // "Volume" is the word most officers reach for, and pairing it
           // with "movement" removes the last reading where this looks like a
@@ -201,11 +237,13 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
         />
       </div>
 
-      <ServiceControlSchedule data={data} />
-
-      <Card className="mt-6">
-        <CardHeader title="Reporting period" subtitle="Dates apply to posted journal entries" />
-        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-[180px_180px_minmax(220px,1fr)_190px_auto] lg:items-end">
+      <Card className="mt-6 overflow-hidden">
+        <CardHeader
+          title="Find accounts"
+          subtitle="Narrow the schedule by posting date, account name, code, group, or type."
+          action={filtersActive ? <Badge tone="blue">Filters applied</Badge> : <Badge tone="slate">All accounts</Badge>}
+        />
+        <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 xl:grid-cols-[165px_165px_minmax(240px,1fr)_190px] xl:items-end">
           <Field label="From" htmlFor="tb-from">
             <Input
               id="tb-from"
@@ -225,12 +263,16 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
             />
           </Field>
           <Field label="Search accounts" htmlFor="tb-search">
-            <Input
-              id="tb-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Code, account or group"
-            />
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                id="tb-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Code, account or group"
+                className="pl-9"
+              />
+            </div>
           </Field>
           <Field label="Account type" htmlFor="tb-type">
             <Select
@@ -246,32 +288,29 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
               ))}
             </Select>
           </Field>
-          <div className="flex items-center pb-2">
-            <Toggle checked={showZero} onChange={setShowZero} label="Show zero accounts" />
-            <span className="ml-2 text-xs text-slate-600">Show zero accounts</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Toggle checked={showZero} onChange={setShowZero} label="Show zero-balance accounts" size="sm" />
+            <span className="text-[13px] text-slate-600">Include zero-balance accounts</span>
           </div>
+          {filtersActive && (
+            <Button variant="ghost" onClick={() => { setFrom(''); setTo(''); setQuery(''); setType('ALL'); setShowZero(false); }}>
+              Reset filters
+            </Button>
+          )}
         </div>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-6 overflow-hidden">
         <CardHeader
-          title="Account balances"
-          subtitle={`${rows.length} account${rows.length === 1 ? '' : 's'} shown · ${periodLabel}`}
+          title="Account balance schedule"
+          subtitle={`${rows.length} of ${data.rows.length} account${data.rows.length === 1 ? '' : 's'} shown · ${periodLabel}`}
           action={
-            from || to || query || type !== 'ALL' || showZero ? (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setFrom('');
-                  setTo('');
-                  setQuery('');
-                  setType('ALL');
-                  setShowZero(false);
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : undefined
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <Activity className="h-4 w-4" />
+              {movementCount} account{movementCount === 1 ? '' : 's'} with movement
+            </div>
           }
         />
         <DataTable
@@ -297,7 +336,7 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
             {
               key: 'type',
               header: 'Type',
-              cell: (row) => <Badge tone="slate">{ACCOUNT_TYPE_LABELS[row.type]}</Badge>,
+              cell: (row) => <Badge tone={accountTone(row.type)}>{ACCOUNT_TYPE_LABELS[row.type]}</Badge>,
             },
             {
               key: 'debit',
@@ -363,12 +402,12 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">{row.group}</p>
                 </div>
-                <Badge tone="slate">{ACCOUNT_TYPE_LABELS[row.type]}</Badge>
+                <Badge tone={accountTone(row.type)}>{ACCOUNT_TYPE_LABELS[row.type]}</Badge>
               </div>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <Value label="Debit" value={money(row.debit)} />
                 <Value label="Credit" value={money(row.credit)} />
-                <Value label="Balance" value={money(row.balance)} align="right" strong />
+                <Value label="Balance" value={money(row.balance)} align="right" strong negative={Number(row.balance) < 0} />
               </div>
             </div>
           )}
@@ -380,8 +419,16 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
             />
           }
         />
+        {filtersActive && (
+          <div className="grid gap-2 border-t border-slate-100 bg-brand-50/40 px-5 py-3 text-sm sm:grid-cols-4">
+            <p className="font-medium text-brand-800">Visible rows</p>
+            <p className="tnum text-right text-slate-700"><span className="mr-2 text-xs text-slate-500">Debit</span>{money(String(visibleTotals.debit))}</p>
+            <p className="tnum text-right text-slate-700"><span className="mr-2 text-xs text-slate-500">Credit</span>{money(String(visibleTotals.credit))}</p>
+            <p className="tnum text-right font-semibold text-navy-900"><span className="mr-2 text-xs font-normal text-slate-500">Net</span>{money(String(visibleTotals.balance))}</p>
+          </div>
+        )}
         <div className="grid gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm sm:grid-cols-3">
-          <p className="font-semibold text-navy-900">Trial balance totals</p>
+          <p className="font-semibold text-navy-900">Overall ledger totals</p>
           <p className="tnum text-right">
             <span className="mr-2 text-xs text-slate-500">Debit</span>
             {money(data.trialBalance.debit)}
@@ -392,6 +439,8 @@ export function TrialBalanceClient({ initial }: { initial: Statements }) {
           </p>
         </div>
       </Card>
+
+      <ServiceControlSchedule data={data} />
     </>
   );
 }
@@ -401,18 +450,28 @@ function Value({
   value,
   align,
   strong,
+  negative,
 }: {
   label: string;
   value: string;
   align?: 'right';
   strong?: boolean;
+  negative?: boolean;
 }) {
   return (
     <div className={align === 'right' ? 'text-right' : undefined}>
       <p className="text-slate-400">{label}</p>
-      <p className={`tnum mt-0.5 ${strong ? 'font-semibold text-navy-900' : 'text-slate-700'}`}>
+      <p className={`tnum mt-0.5 ${negative ? 'font-semibold text-red-600' : strong ? 'font-semibold text-navy-900' : 'text-slate-700'}`}>
         {value}
       </p>
     </div>
   );
+}
+
+function accountTone(type: BookAccountType): 'blue' | 'purple' | 'green' | 'gold' | 'navy' {
+  if (type === 'ASSET') return 'blue';
+  if (type === 'LIABILITY') return 'purple';
+  if (type === 'INCOME') return 'green';
+  if (type === 'EXPENSE') return 'gold';
+  return 'navy';
 }

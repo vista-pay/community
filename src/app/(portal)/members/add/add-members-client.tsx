@@ -62,6 +62,11 @@ const OUTCOME_COPY: Record<
   ALREADY_MEMBER: { label: 'Already a member', tone: 'navy', blurb: 'No invitation needed.' },
   ALREADY_INVITED: { label: 'Already invited', tone: 'amber', blurb: 'Still waiting on a reply.' },
   INVALID: { label: 'Not sent', tone: 'red', blurb: 'Check the address.' },
+  DELIVERY_FAILED: {
+    label: 'Email failed',
+    tone: 'red',
+    blurb: 'The invitation was not delivered. You can try again.',
+  },
 };
 
 export function AddMembersClient() {
@@ -303,7 +308,13 @@ export function AddMembersClient() {
  */
 function InviteSummary({ result }: { result: InviteResult }) {
   const grouped = useMemo(() => {
-    const order: InviteOutcome['status'][] = ['INVITED', 'ALREADY_INVITED', 'ALREADY_MEMBER', 'INVALID'];
+    const order: InviteOutcome['status'][] = [
+      'INVITED',
+      'ALREADY_INVITED',
+      'ALREADY_MEMBER',
+      'DELIVERY_FAILED',
+      'INVALID',
+    ];
     return order
       .map((status) => ({ status, rows: result.outcomes.filter((o) => o.status === status) }))
       .filter((group) => group.rows.length > 0);

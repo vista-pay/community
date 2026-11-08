@@ -97,10 +97,20 @@ async function forward(req: NextRequest, path: string[]) {
     }
   }
 
-  const text = await res.text();
-  return new NextResponse(text, {
+  // Never decode the upstream body as text here. This proxy also carries
+  // PDFs and other binary responses; UTF-8 decoding corrupts their bytes and
+  // can leave the browser with a blank or unreadable document.
+  const responseHeaders = new Headers();
+  responseHeaders.set('Content-Type', res.headers.get('content-type') ?? 'application/json');
+  const disposition = res.headers.get('content-disposition');
+  if (disposition) responseHeaders.set('Content-Disposition', disposition);
+  const cacheControl = res.headers.get('cache-control');
+  if (cacheControl) responseHeaders.set('Cache-Control', cacheControl);
+
+  const bytes = await res.arrayBuffer();
+  return new NextResponse(bytes, {
     status: res.status,
-    headers: { 'Content-Type': res.headers.get('content-type') ?? 'application/json' },
+    headers: responseHeaders,
   });
 }
 

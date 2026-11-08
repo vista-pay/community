@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { Route } from 'next';
-import { BadgeCheck, CalendarClock, Coins, IdCard, Plus, Users } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, CalendarClock, ChevronRight, Coins, IdCard, Plus, Search, Users } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -23,10 +23,11 @@ import {
 } from '@/components/ui';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
-import { useQuery } from '@/hooks/use-query';
+import { useToast } from '@/components/providers/toast-provider';
+import { useMutation, useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
-import type { DuesLeviesOverview, LevyFrequency } from '@/types';
+import type { ChargeCollection, ChargeCollectionMember, DuesLeviesCollections, DuesLeviesOverview, LevyFrequency } from '@/types';
 
 const FREQUENCIES: Array<{ value: LevyFrequency; label: string; note: string }> = [
   { value: 'ONE_OFF', label: 'One-off', note: 'Owed once, until it is paid' },
@@ -50,9 +51,15 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
     { initial },
   );
   const d = data ?? initial;
+  const collections = useQuery<DuesLeviesCollections>(
+    () => portalApi.duesLeviesCollections(communityId),
+    [communityId],
+  );
 
   const [duesDraft, setDuesDraft] = useState(d.monthlyDues ?? '');
   const [creating, setCreating] = useState(false);
+  const [registerId, setRegisterId] = useState<string | null>(null);
+  const [fineTarget, setFineTarget] = useState<{ charge: ChargeCollection; member: ChargeCollectionMember } | null>(null);
 
   const duesGate = useMoneyOutOtp<{ amount: string | null }>({
     perform: (extra, { amount }) => portalApi.setMonthlyDues(communityId, amount, extra),
@@ -68,6 +75,7 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
 
   const prefixLocked = d.membersIssued > 0;
   const duesDirty = duesDraft !== (d.monthlyDues ?? '');
+  const selectedRegister = collections.data?.charges.find((charge) => charge.id === registerId) ?? null;
 
   return (
     <>
@@ -112,6 +120,49 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
           icon={<Users className="h-4 w-4" />}
         />
       </div>
+
+      <Card className="mb-6 overflow-hidden">
+        <CardHeader
+          title="Collection tracking"
+          subtitle="Open a charge to see who has paid, follow up unpaid members, and issue a fine where necessary."
+          action={collections.data ? <Badge tone={collections.data.charges.some((charge) => charge.unpaid > 0) ? 'amber' : 'green'}>{collections.data.charges.reduce((sum, charge) => sum + charge.unpaid, 0)} unpaid</Badge> : undefined}
+        />
+        {collections.error ? (
+          <div className="p-5"><Callout tone="danger">{collections.error}</Callout></div>
+        ) : collections.loading ? (
+          <div className="grid gap-3 p-5 md:grid-cols-2">
+            {[0, 1].map((item) => <div key={item} className="h-32 animate-pulse rounded-xl bg-slate-100" />)}
+          </div>
+        ) : !collections.data?.charges.length ? (
+          <EmptyState compact icon={<Coins className="h-5 w-5" />} title="Nothing to track yet" body="Set monthly dues or create an active levy to start a collection register." />
+        ) : (
+          <div className="grid gap-4 p-5 lg:grid-cols-2">
+            {collections.data.charges.map((charge) => {
+              const total = charge.paid + charge.unpaid;
+              const percent = total ? Math.round((charge.paid / total) * 100) : 0;
+              return (
+                <div key={charge.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-navy-900">{charge.name}</h3>
+                        <Badge tone={charge.kind === 'DUES' ? 'navy' : 'purple'}>{charge.kind === 'DUES' ? 'Dues' : 'Levy'}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{charge.period} · {money(charge.amount, 'NGN')} per member</p>
+                    </div>
+                    <span className="tnum text-sm font-semibold text-navy-900">{percent}%</span>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-600" style={{ width: `${percent}%` }} /></div>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex gap-3"><span className="font-medium text-emerald-700">{charge.paid} paid</span><span className={charge.unpaid ? 'font-medium text-amber-700' : 'text-slate-500'}>{charge.unpaid} unpaid</span></div>
+                    <Button variant="ghost" size="sm" iconRight={<ChevronRight className="h-4 w-4" />} onClick={() => setRegisterId(charge.id)}>View register</Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
@@ -270,9 +321,135 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
         }}
       />
 
+      <CollectionRegisterModal
+        charge={selectedRegister}
+        onClose={() => setRegisterId(null)}
+        onFine={(member) => selectedRegister && setFineTarget({ charge: selectedRegister, member })}
+      />
+      <ChargeFineModal
+        target={fineTarget}
+        communityId={communityId}
+        onClose={() => setFineTarget(null)}
+        onCreated={async () => { setFineTarget(null); await collections.refresh(); }}
+      />
+
       <MoneyOutOtpDialog gate={duesGate} />
       <MoneyOutOtpDialog gate={levyGate} />
     </>
+  );
+}
+
+function CollectionRegisterModal({
+  charge,
+  onClose,
+  onFine,
+}: {
+  charge: ChargeCollection | null;
+  onClose: () => void;
+  onFine: (member: ChargeCollectionMember) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<'ALL' | 'PAID' | 'UNPAID'>('ALL');
+  const members = (charge?.members ?? []).filter((member) => {
+    if (status !== 'ALL' && member.status !== status) return false;
+    const term = query.trim().toLowerCase();
+    return !term || `${member.name} ${member.email} ${member.memberCode ?? ''}`.toLowerCase().includes(term);
+  });
+
+  return (
+    <Modal
+      open={charge !== null}
+      onClose={() => { setQuery(''); setStatus('ALL'); onClose(); }}
+      size="xl"
+      title={charge ? `${charge.name} register` : 'Collection register'}
+      description={charge ? `${charge.period} · ${money(charge.amount, 'NGN')} per member · ${charge.paid} paid, ${charge.unpaid} unpaid` : undefined}
+      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
+    >
+      {charge && (
+        <div className="space-y-4">
+          <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-[minmax(220px,1fr)_180px]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search member, email or code" className="bg-white pl-9" />
+            </div>
+            <Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
+              <option value="ALL">All payment statuses</option>
+              <option value="PAID">Paid</option>
+              <option value="UNPAID">Unpaid</option>
+            </Select>
+          </div>
+
+          {members.length === 0 ? (
+            <EmptyState compact title="No matching members" body="Change the search or payment-status filter." />
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <DataTable
+                rows={members}
+                rowKey={(member) => member.memberId}
+                columns={[
+                  {
+                    key: 'member', header: 'Member', cell: (member) => <div><p className="font-medium text-navy-900">{member.name}</p><p className="mt-0.5 text-xs text-slate-500">{member.memberCode ?? member.email}</p></div>,
+                  },
+                  { key: 'amount', header: 'Amount', align: 'right', cell: (member) => money(member.amount, 'NGN') },
+                  { key: 'status', header: 'Status', cell: (member) => <Badge tone={member.status === 'PAID' ? 'green' : 'amber'} dot>{member.status === 'PAID' ? 'Paid' : 'Unpaid'}</Badge> },
+                  { key: 'action', header: '', align: 'right', cell: (member) => member.status === 'UNPAID' ? <Button size="xs" variant="secondary" icon={<AlertTriangle className="h-3.5 w-3.5" />} onClick={() => onFine(member)}>Issue fine</Button> : <span className="text-xs text-slate-500">{member.paidAt ? date(member.paidAt) : 'Paid'}</span> },
+                ]}
+                mobile={(member) => <div className="space-y-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-navy-900">{member.name}</p><p className="mt-0.5 text-xs text-slate-500">{member.memberCode ?? member.email}</p></div><Badge tone={member.status === 'PAID' ? 'green' : 'amber'} dot>{member.status === 'PAID' ? 'Paid' : 'Unpaid'}</Badge></div><div className="flex items-center justify-between"><span className="tnum text-sm font-medium text-navy-900">{money(member.amount, 'NGN')}</span>{member.status === 'UNPAID' && <Button size="xs" variant="secondary" onClick={() => onFine(member)}>Issue fine</Button>}</div></div>}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function ChargeFineModal({
+  target,
+  communityId,
+  onClose,
+  onCreated,
+}: {
+  target: { charge: ChargeCollection; member: ChargeCollectionMember } | null;
+  communityId: string;
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const create = useMutation(
+    (fineReason: string) => portalApi.issueFine(communityId, {
+      memberId: target!.member.memberId,
+      amount,
+      reason: fineReason,
+    }),
+    {
+      onSuccess: async () => { toast('Fine issued', 'success'); setAmount(''); setReason(''); await onCreated(); },
+      onError: (message) => toast('Could not issue the fine', 'error', message),
+    },
+  );
+  const close = () => { setAmount(''); setReason(''); create.reset(); onClose(); };
+  const suggestedReason = target ? `Unpaid ${target.charge.name} — ${target.charge.period}` : '';
+
+  return (
+    <Modal
+      open={target !== null}
+      onClose={close}
+      title="Issue a fine for non-payment"
+      description={target ? `${target.member.name} has not paid ${money(target.charge.amount, 'NGN')} for ${target.charge.name}.` : undefined}
+      footer={<><Button variant="secondary" onClick={close}>Cancel</Button><Button loading={create.pending} disabled={Number(amount) <= 0 || (reason.trim() || suggestedReason).length < 4} onClick={() => void create.run(reason.trim() || suggestedReason)}>Issue fine</Button></>}
+    >
+      <div className="space-y-4">
+        {create.error && <Callout tone="danger">{create.error}</Callout>}
+        <Callout tone="warning" title="This creates a separate amount owed">
+          The original due or levy remains unpaid. The fine is added to the member’s account and recorded in the audit trail.
+        </Callout>
+        <Field label="Member"><Input value={target?.member.name ?? ''} disabled /></Field>
+        <Field label="Fine amount (NGN)" required><Input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="Enter the penalty amount" className="tnum" /></Field>
+        <Field label="Reason" required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={suggestedReason} rows={3} /></Field>
+      </div>
+    </Modal>
   );
 }
 
