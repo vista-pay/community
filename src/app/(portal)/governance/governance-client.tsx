@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import { LinkButton } from '@/components/ui';
 import {
   CalendarDays,
@@ -76,7 +78,6 @@ export function GovernanceClient({ initial }: { initial: Initial }) {
   });
 
   const [meetingOpen, setMeetingOpen] = useState(false);
-  const [pollOpen, setPollOpen] = useState(false);
   const [fineOpen, setFineOpen] = useState(false);
 
   const unpaidFines = (fines.data ?? []).filter((f) => f.status === 'UNPAID').length;
@@ -91,9 +92,9 @@ export function GovernanceClient({ initial }: { initial: Initial }) {
           tab === 'meetings' ? (
             <LinkButton href={'/governance/meetings/new' as never} icon={<Plus className="h-4 w-4" />}>Schedule meeting</LinkButton>
           ) : tab === 'votes' ? (
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setPollOpen(true)}>
+            <LinkButton href={'/governance/polls/new' as Route} icon={<Plus className="h-4 w-4" />}>
               Open a ballot
-            </Button>
+            </LinkButton>
           ) : tab === 'fines' ? (
             <Button icon={<Plus className="h-4 w-4" />} onClick={() => setFineOpen(true)}>
               Issue a fine
@@ -139,12 +140,6 @@ export function GovernanceClient({ initial }: { initial: Initial }) {
         <FinesTab fines={fines.data ?? []} communityId={communityId} onChanged={fines.refresh} />
       )}
 
-      <PollModal
-        open={pollOpen}
-        onClose={() => setPollOpen(false)}
-        communityId={communityId}
-        onCreated={polls.refresh}
-      />
       <FineModal
         open={fineOpen}
         onClose={() => setFineOpen(false)}
@@ -673,13 +668,17 @@ function VotesTab({
     <div className="grid gap-4 lg:grid-cols-2">
       {polls.map((p) => {
         return (
-          <Card key={p.id}>
-            <CardHeader
-              title={p.title}
-              subtitle={humanise(p.kind)}
-              action={<StatusBadge status={p.status.toLowerCase()} />}
-            />
-            <div className="px-5 py-4">
+          <Card key={p.id} className="overflow-hidden transition hover:border-brand-200 hover:shadow-md">
+            <Link
+              href={`/governance/polls/${p.id}` as Route}
+              className="block rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            >
+              <CardHeader
+                title={p.title}
+                subtitle={humanise(p.kind)}
+                action={<StatusBadge status={p.status.toLowerCase()} />}
+              />
+              <div className="px-5 py-4">
               <p className="text-[13px] text-slate-700">{p.question}</p>
 
               <ul className="mt-4 space-y-2">
@@ -721,7 +720,9 @@ function VotesTab({
                   ? `opens ${date(p.opensAt, 'datetime')}`
                   : `closes ${date(p.closesAt, 'datetime')}`}
               </p>
-            </div>
+                <p className="mt-3 text-[13px] font-semibold text-brand-700">View full result →</p>
+              </div>
+            </Link>
 
             {p.status === 'CLOSED' && (
               <div className="border-t border-slate-100 px-5 py-3">
@@ -740,126 +741,6 @@ function VotesTab({
         );
       })}
     </div>
-  );
-}
-
-function PollModal({
-  open,
-  onClose,
-  communityId,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  communityId: string;
-  onCreated: () => Promise<void>;
-}) {
-  const { toast } = useToast();
-  const [title, setTitle] = useState('');
-  const [kind, setKind] = useState('POLL');
-  const [question, setQuestion] = useState('');
-  const [options, setOptions] = useState('Yes\nNo\nAbstain');
-  const [opensAt, setOpensAt] = useState('');
-  const [closesAt, setClosesAt] = useState('');
-
-  const create = useMutation(
-    () =>
-      portalApi.createPoll(communityId, {
-        title: title.trim(),
-        kind,
-        question: question.trim(),
-        eligibility: 'ALL_ACTIVE',
-        options: options
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean),
-        opensAt: new Date(opensAt).toISOString(),
-        closesAt: new Date(closesAt).toISOString(),
-      }),
-    {
-      onSuccess: async () => {
-        toast('Ballot created', 'success');
-        onClose();
-        await onCreated();
-      },
-      onError: (message) => toast('Could not create the ballot', 'error', message),
-    },
-  );
-
-  const optionCount = options.split('\n').filter((l) => l.trim()).length;
-  const valid =
-    title.trim().length > 2 && question.trim().length > 4 && optionCount >= 2 && opensAt && closesAt;
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Open a ballot"
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!valid} loading={create.pending} onClick={() => void create.run()}>
-            Open ballot
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {create.error && <Callout tone="danger">{create.error}</Callout>}
-
-        <Field label="Title" htmlFor="pl-title" required>
-          <Input
-            id="pl-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Adoption of the 2026 accounts"
-          />
-        </Field>
-
-        <Field label="Type" htmlFor="pl-kind" required>
-          <Select id="pl-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="POLL">Poll</option>
-            <option value="ELECTION">Election</option>
-            <option value="RESOLUTION">Resolution</option>
-          </Select>
-        </Field>
-
-        <Field label="Question" htmlFor="pl-q" required>
-          <Textarea
-            id="pl-q"
-            rows={2}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Do you adopt the audited accounts as presented?"
-          />
-        </Field>
-
-        <Field label="Options" htmlFor="pl-opts" required hint="One per line, at least two">
-          <Textarea id="pl-opts" rows={4} value={options} onChange={(e) => setOptions(e.target.value)} />
-        </Field>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Opens" htmlFor="pl-open" required>
-            <Input
-              id="pl-open"
-              type="datetime-local"
-              value={opensAt}
-              onChange={(e) => setOpensAt(e.target.value)}
-            />
-          </Field>
-          <Field label="Closes" htmlFor="pl-close" required>
-            <Input
-              id="pl-close"
-              type="datetime-local"
-              value={closesAt}
-              onChange={(e) => setClosesAt(e.target.value)}
-            />
-          </Field>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

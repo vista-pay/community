@@ -604,6 +604,24 @@ export interface Poll {
   myVote: string | null;
 }
 
+/**
+ * Who won, and whether anyone did.
+ *
+ * Carried rather than derived in the UI because a tie is the case that gets
+ * got wrong: two options level is not a result, and showing the first of
+ * them as leading would announce a decision the community never made.
+ */
+export interface PollOutcome {
+  kind: 'WON' | 'LEADING' | 'TIE' | 'NO_VOTES';
+  label: string | null;
+  votes: number;
+  share: number;
+}
+
+export interface PollDetail extends Poll {
+  outcome: PollOutcome;
+}
+
 export interface CommunityDocument {
   id: string;
   name: string;

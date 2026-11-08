@@ -48,6 +48,7 @@ import type {
   NotificationItem,
   PayoutPosition,
   Poll,
+  PollDetail,
   PostingRule,
   SavingsOverview,
   SavingsProduct,
@@ -71,6 +72,7 @@ import type {
   CommunityConfiguration,
   CommunityLevy,
   DuesLeviesOverview,
+  DuesLeviesCollections,
   InviteResult,
   BatchPreview,
   MigrationRowKind,
@@ -295,6 +297,13 @@ export const portalApi = {
 
   polls: (communityId: string) => get<Poll[]>(path(communityId, '/governance/polls')),
 
+  poll: (communityId: string, pollId: string) =>
+    get<PollDetail>(path(communityId, `/governance/polls/${pollId}`)),
+
+  /** The browser downloads it directly; the proxy forwards the bytes. */
+  pollResultPdfUrl: (communityId: string, pollId: string) =>
+    `/api/proxy${path(communityId, `/governance/polls/${pollId}/result.pdf`)}`,
+
   createPoll: (communityId: string, body: Record<string, unknown>) =>
     post<Poll>(path(communityId, '/governance/polls'), body),
 
@@ -303,6 +312,9 @@ export const portalApi = {
 
   certifyPoll: (communityId: string, pollId: string) =>
     post<Poll>(path(communityId, `/governance/polls/${pollId}/certify`)),
+
+  broadcastPollResult: (communityId: string, pollId: string) =>
+    post<{ queued: boolean }>(path(communityId, `/governance/polls/${pollId}/broadcast-result`)),
 
   documents: (communityId: string) =>
     get<CommunityDocument[]>(path(communityId, '/governance/documents')),
@@ -763,6 +775,9 @@ export const portalApi = {
 
   duesLevies: (communityId: string) =>
     get<DuesLeviesOverview>(path(communityId, '/dues-levies')),
+
+  duesLeviesCollections: (communityId: string) =>
+    get<DuesLeviesCollections>(path(communityId, '/dues-levies/collections')),
 
   setMonthlyDues: (communityId: string, amount: string | null, extra: MoneyOutExtra = {}) =>
     patch<{ monthlyDues: string | null }>(path(communityId, '/dues-levies/monthly-dues'), {
