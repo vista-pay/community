@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Lock, Pencil, Plus, Wallet } from 'lucide-react';
+import { Lock, Pencil, Plus, Wallet } from 'lucide-react';
 import type { Column } from '@/components/ui';
 import {
   Badge,
@@ -17,7 +17,8 @@ import {
 import { useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { portalApi } from '@/services/portal';
-import { cn, money } from '@/lib/format';
+import { money } from '@/lib/format';
+import { UnusedDisclosure, hasMovement } from '@/components/accounting/unused-rows';
 import type { Route } from 'next';
 import type { BookAccount, BookAccountType, PostingRule } from '@/types';
 import { ACCOUNT_CLASSES } from './account-classes';
@@ -80,8 +81,8 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
       .sort((a, b) => a.code.localeCompare(b.code));
 
     return {
-      inUse: matching.filter((a) => (a.entries ?? 0) > 0),
-      unused: matching.filter((a) => (a.entries ?? 0) === 0),
+      inUse: matching.filter(hasMovement),
+      unused: matching.filter((a) => !hasMovement(a)),
     };
   }, [accounts, tab, search]);
 
@@ -186,31 +187,13 @@ export function ChartOfAccountsClient({ initial }: { initial: BookAccount[] }) {
             {/* Moved and folded, not hidden: an account that exists and has
                 never been used is a fact worth being able to see, just not
                 one worth scrolling past thirty times to reach the figures. */}
-            {unused.length > 0 ? (
-              <div className="border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowUnused(!unusedOpen)}
-                  className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-slate-50 focus-ring"
-                >
-                  <ChevronRight
-                    className={cn(
-                      'h-4 w-4 text-slate-400 transition-transform',
-                      unusedOpen && 'rotate-90',
-                    )}
-                  />
-                  <span className="flex-1 text-[13px] font-medium text-navy-900">
-                    {unused.length} account{unused.length === 1 ? '' : 's'} never used
-                  </span>
-                  <span className="text-[12.5px] text-slate-500">
-                    {unusedOpen ? 'Hide' : 'Show'}
-                  </span>
-                </button>
-                {unusedOpen ? (
-                  <DataTable rows={unused} rowKey={(a) => a.id} columns={ACCOUNT_COLUMNS} />
-                ) : null}
-              </div>
-            ) : null}
+            <UnusedDisclosure
+              count={unused.length}
+              open={unusedOpen}
+              onToggle={() => setShowUnused(!unusedOpen)}
+            >
+              <DataTable rows={unused} rowKey={(a) => a.id} columns={ACCOUNT_COLUMNS} />
+            </UnusedDisclosure>
           </>
         )}
       </Card>

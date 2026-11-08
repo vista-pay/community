@@ -1,9 +1,12 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Receipt, TrendingDown, TrendingUp } from 'lucide-react';
+import type { Column } from '@/components/ui';
 import { Badge, Card, CardHeader, DataTable, EmptyState, PageHeader, ProgressBar, Stat } from '@/components/ui';
 import { money } from '@/lib/format';
+import { UnusedDisclosure, hasMovement } from '@/components/accounting/unused-rows';
 import type { Statements } from '@/types';
 
 /**
@@ -14,6 +17,25 @@ import type { Statements } from '@/types';
  * community spent.
  */
 export function RevenueClient({ initial }: { initial: Statements }) {
+  /** Idle income accounts start folded; they are what buries the earning ones. */
+  const [showIdle, setShowIdle] = useState(false);
+
+  /**
+   * Income accounts split by whether anything has been earned in them.
+   *
+   * A chart carries an income line for every way a community might earn —
+   * entry fees, investment income, loan charges — and most carry nothing.
+   * Listing all of them put the one account actually earning below several
+   * that never have.
+   */
+  const { earning, idle } = useMemo(() => {
+    const income = initial.rows.filter((r) => r.type === 'INCOME');
+    return {
+      earning: income.filter(hasMovement),
+      idle: income.filter((r) => !hasMovement(r)),
+    };
+  }, [initial.rows]);
+
   const pnl = initial.profitAndLoss;
   const income = Number(pnl.totalIncome);
   const expense = Number(pnl.totalExpense);
@@ -100,24 +122,47 @@ export function RevenueClient({ initial }: { initial: Statements }) {
       </div>
 
       <Card className="mt-5">
-        <CardHeader title="Income accounts" subtitle="Every account in the income class" />
-        <DataTable
-          rows={initial.rows.filter((r) => r.type === 'INCOME')}
-          rowKey={(r) => r.code}
-          empty={<EmptyState icon={<TrendingUp className="h-5 w-5" />} title="No income accounts" />}
-          columns={[
-            { key: 'code', header: 'Code', cell: (r) => <span className="tnum">{r.code}</span> },
-            { key: 'name', header: 'Account', cell: (r) => r.name },
-            { key: 'cr', header: 'Credit', align: 'right', cell: (r) => money(r.credit, 'NGN') },
-            {
-              key: 'bal',
-              header: 'Balance',
-              align: 'right',
-              cell: (r) => <span className="font-semibold">{money(r.balance, 'NGN')}</span>,
-            },
-          ]}
+        <CardHeader
+          title="Income accounts"
+          subtitle={
+            earning.length > 0
+              ? `${earning.length} earning${idle.length > 0 ? `, ${idle.length} idle` : ''}`
+              : 'Every account in the income class'
+          }
         />
+        <DataTable
+          rows={earning}
+          rowKey={(r) => r.code}
+          empty={
+            <EmptyState
+              icon={<TrendingUp className="h-5 w-5" />}
+              title="No income recorded yet"
+              body="Income accounts appear here as soon as something posts against them."
+            />
+          }
+          columns={INCOME_COLUMNS}
+        />
+        <UnusedDisclosure
+          count={idle.length}
+          open={showIdle}
+          onToggle={() => setShowIdle((open) => !open)}
+        >
+          <DataTable rows={idle} rowKey={(r) => r.code} columns={INCOME_COLUMNS} />
+        </UnusedDisclosure>
       </Card>
     </>
   );
 }
+
+/** One definition for both tables, so they cannot drift apart. */
+const INCOME_COLUMNS: Column<Statements['rows'][number]>[] = [
+  { key: 'code', header: 'Code', cell: (r) => <span className="tnum">{r.code}</span> },
+  { key: 'name', header: 'Account', cell: (r) => r.name },
+  { key: 'cr', header: 'Credit', align: 'right', cell: (r) => money(r.credit, 'NGN') },
+  {
+    key: 'bal',
+    header: 'Balance',
+    align: 'right',
+    cell: (r) => <span className="font-semibold">{money(r.balance, 'NGN')}</span>,
+  },
+];

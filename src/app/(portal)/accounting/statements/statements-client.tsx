@@ -15,6 +15,8 @@ import {
   PageHeader,
   Select,
 } from '@/components/ui';
+import type { Column } from '@/components/ui';
+import { UnusedDisclosure, hasMovement } from '@/components/accounting/unused-rows';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
@@ -51,6 +53,22 @@ export function StatementsClient() {
     const all = data?.rows ?? [];
     return accountType === 'all' ? all : all.filter((r) => r.type === accountType);
   }, [data, accountType]);
+
+  /**
+   * Accounts with movement in this period, and the ones with none.
+   *
+   * A statement is read to see what happened, and a seeded chart carries
+   * forty accounts of which a handful ever move. Listing every zero row
+   * first meant scrolling past them to reach the figures the period is
+   * actually about.
+   *
+   * Totals and the CSV export still use `rows`: a statement that silently
+   * omitted accounts would be a different document, and the export is what
+   * gets sent to an auditor.
+   */
+  const moved = useMemo(() => rows.filter(hasMovement), [rows]);
+  const still = useMemo(() => rows.filter((r) => !hasMovement(r)), [rows]);
+  const [showStill, setShowStill] = useState(false);
 
   const totals = useMemo(
     () =>
@@ -161,31 +179,17 @@ export function StatementsClient() {
           />
         ) : (
           <>
-            <DataTable
-              rows={rows}
-              rowKey={(r) => r.code}
-              columns={[
-                {
-                  key: 'code',
-                  header: 'Code',
-                  cell: (r) => <span className="tnum font-semibold text-navy-900">{r.code}</span>,
-                },
-                { key: 'name', header: 'Account', cell: (r) => r.name },
-                { key: 'type', header: 'Class', cell: (r) => <Badge tone="slate">{r.type}</Badge> },
-                { key: 'dr', header: 'Debit', align: 'right', cell: (r) => money(r.debit, 'NGN') },
-                { key: 'cr', header: 'Credit', align: 'right', cell: (r) => money(r.credit, 'NGN') },
-                {
-                  key: 'bal',
-                  header: 'Balance',
-                  align: 'right',
-                  cell: (r) => (
-                    <span className={Number(r.balance) < 0 ? 'font-semibold text-red-600' : 'font-semibold'}>
-                      {money(r.balance, 'NGN')}
-                    </span>
-                  ),
-                },
-              ]}
-            />
+            <DataTable rows={moved} rowKey={(r) => r.code} columns={STATEMENT_COLUMNS} />
+            <UnusedDisclosure
+              count={still.length}
+              open={showStill}
+              onToggle={() => setShowStill((open) => !open)}
+            >
+              <DataTable rows={still} rowKey={(r) => r.code} columns={STATEMENT_COLUMNS} />
+            </UnusedDisclosure>
+            {/* Totals cover every account in the filter, folded or not — a
+                statement whose totals disagreed with its own rows would be
+                worse than one that scrolls. */}
             <div className="flex items-center justify-end gap-8 border-t border-slate-200 px-5 py-3 text-[13px]">
               <span className="text-slate-500">Totals</span>
               <span className="tnum font-semibold text-navy-900">{money(totals.debit, 'NGN')}</span>
@@ -197,3 +201,26 @@ export function StatementsClient() {
     </>
   );
 }
+
+/** One definition for both tables, so they cannot drift apart. */
+const STATEMENT_COLUMNS: Column<Statements['rows'][number]>[] = [
+  {
+    key: 'code',
+    header: 'Code',
+    cell: (r) => <span className="tnum font-semibold text-navy-900">{r.code}</span>,
+  },
+  { key: 'name', header: 'Account', cell: (r) => r.name },
+  { key: 'type', header: 'Class', cell: (r) => <Badge tone="slate">{r.type}</Badge> },
+  { key: 'dr', header: 'Debit', align: 'right', cell: (r) => money(r.debit, 'NGN') },
+  { key: 'cr', header: 'Credit', align: 'right', cell: (r) => money(r.credit, 'NGN') },
+  {
+    key: 'bal',
+    header: 'Balance',
+    align: 'right',
+    cell: (r) => (
+      <span className={Number(r.balance) < 0 ? 'font-semibold text-red-600' : 'font-semibold'}>
+        {money(r.balance, 'NGN')}
+      </span>
+    ),
+  },
+];
