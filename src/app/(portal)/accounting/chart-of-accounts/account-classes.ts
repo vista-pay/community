@@ -103,3 +103,49 @@ export function codeFitsClass(code: string, type: BookAccountType): boolean {
   const leading = Number(String(code).slice(0, 4).padEnd(4, '0'));
   return leading >= start && leading <= end;
 }
+
+/**
+ * What a debit or a credit actually *means* on an account of this class.
+ *
+ * Debit and credit are the terms an auditor needs and the ones the books are
+ * kept in, so they stay. But they read backwards to anyone who learned them
+ * from a bank statement — a bank says "credit" when you pay in, because on
+ * the bank's own books your deposit is a liability they owe you. These are
+ * the plain words for the same movement, from the community's side of it.
+ *
+ * Not simply "the normal side means more". It does for an asset, a
+ * liability, income and equity — but a debit to an expense account is money
+ * leaving, even though it increases the account.
+ */
+const EFFECTS: Record<BookAccountType, { debit: string; credit: string }> = {
+  ASSET: { debit: 'Money in', credit: 'Money out' },
+  LIABILITY: { debit: 'Settled', credit: 'Money in' },
+  EQUITY: { debit: 'Withdrawn', credit: 'Contributed' },
+  INCOME: { debit: 'Reversed', credit: 'Earned' },
+  EXPENSE: { debit: 'Spent', credit: 'Refunded' },
+};
+
+export const effectOf = (type: BookAccountType, side: 'debit' | 'credit'): string =>
+  EFFECTS[type]?.[side] ?? (side === 'debit' ? 'Debit' : 'Credit');
+
+/**
+ * One line saying which column is which, written out per class.
+ *
+ * Built by hand rather than from the labels above, because "a debit is
+ * settled" is not a sentence. The bank-statement line is on the asset case
+ * deliberately: that is the account people read first and the one where the
+ * convention feels wrong, since a bank says "credit" when you pay in —
+ * their books, not yours.
+ */
+const SENTENCES: Record<BookAccountType, string> = {
+  ASSET:
+    'A debit is money coming in, a credit is money going out. Your bank statement says the opposite because it is written from the bank’s side.',
+  LIABILITY:
+    'A credit is money coming in and what you owe going up; a debit is paying some of it back.',
+  EQUITY:
+    'A credit is capital contributed or surplus retained; a debit is capital taken back out.',
+  INCOME: 'A credit is income earned. A debit only appears when something is reversed.',
+  EXPENSE: 'A debit is money spent. A credit only appears when something is refunded.',
+};
+
+export const sidesSentence = (type: BookAccountType): string => SENTENCES[type] ?? '';

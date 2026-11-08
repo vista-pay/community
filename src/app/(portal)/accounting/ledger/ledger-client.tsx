@@ -24,7 +24,12 @@ import { portalApi } from '@/services/portal';
 import { downloadCsv } from '@/lib/csv';
 import { cn, date, money } from '@/lib/format';
 import type { AccountLedger, BookAccount } from '@/types';
-import { ACCOUNT_CLASSES, classOf } from '../chart-of-accounts/account-classes';
+import {
+  ACCOUNT_CLASSES,
+  classOf,
+  effectOf,
+  sidesSentence,
+} from '../chart-of-accounts/account-classes';
 
 /**
  * Every posting against one account, with a running balance.
@@ -338,6 +343,12 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                     {klass.label} · increases on the {klass.normal.toLowerCase()} side
                     {selected.isActive ? '' : ' · closed to new entries'}
                   </p>
+                  {/* Debit and credit read backwards to anyone who learned
+                      them from a bank statement, where "credit" means money
+                      in — because that is the bank's books, not yours. */}
+                  <p className="mt-1 text-[12.5px] text-slate-500">
+                    {sidesSentence(selected.type)}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -355,8 +366,14 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
               <dl className="grid grid-cols-2 gap-px border-t border-slate-100 bg-slate-100 sm:grid-cols-4">
                 {[
                   { label: 'Opening', value: view.opening },
-                  { label: 'Total debits', value: view.debit },
-                  { label: 'Total credits', value: view.credit },
+                  {
+                    label: `Total debits · ${effectOf(selected.type, 'debit').toLowerCase()}`,
+                    value: view.debit,
+                  },
+                  {
+                    label: `Total credits · ${effectOf(selected.type, 'credit').toLowerCase()}`,
+                    value: view.credit,
+                  },
                   { label: 'Entries', value: String(view.lines.length), plain: true },
                 ].map((stat) => (
                   <div key={stat.label} className="bg-white px-4 py-3">
@@ -499,7 +516,14 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                   },
                   {
                     key: 'dr',
-                    header: 'Debit',
+                    header: (
+                      <span className="block">
+                        Debit
+                        <span className="block text-[10px] font-normal normal-case tracking-normal text-slate-400">
+                          {effectOf(selected?.type ?? 'ASSET', 'debit')}
+                        </span>
+                      </span>
+                    ),
                     align: 'right',
                     cell: (l) =>
                       Number(l.debit) ? (
@@ -512,7 +536,14 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                   },
                   {
                     key: 'cr',
-                    header: 'Credit',
+                    header: (
+                      <span className="block">
+                        Credit
+                        <span className="block text-[10px] font-normal normal-case tracking-normal text-slate-400">
+                          {effectOf(selected?.type ?? 'ASSET', 'credit')}
+                        </span>
+                      </span>
+                    ),
                     align: 'right',
                     cell: (l) =>
                       Number(l.credit) ? (
