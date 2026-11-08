@@ -44,6 +44,8 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
 
   const [picked, setPicked] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  /** Accounts with no postings start hidden; they are what buries the rest. */
+  const [showUnused, setShowUnused] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
@@ -54,7 +56,16 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
 
   // Derived rather than synced from an effect, which would render once with
   // the wrong account before correcting itself.
-  const accountId = picked ?? params.get('account') ?? sorted[0]?.id ?? '';
+  //
+  // Falls back to the first account carrying postings, not the first by
+  // code. A seeded chart starts at 1000 Cash in hand, which most
+  // communities never touch, so the page opened on an empty ledger and gave
+  // no sign that anything else had anything in it.
+  const firstWithEntries = useMemo(
+    () => sorted.find((a) => (a.entries ?? 0) > 0) ?? sorted[0],
+    [sorted],
+  );
+  const accountId = picked ?? params.get('account') ?? firstWithEntries?.id ?? '';
   const selected = sorted.find((a) => a.id === accountId);
 
   /**
@@ -63,25 +74,57 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
    * Built from the accounts themselves, so a section a community invents
    * appears here without anything else changing.
    */
-  const tree = useMemo(() => {
+  const matching = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const matching = sorted.filter(
+    return sorted.filter(
       (a) =>
         !needle ||
         a.code.includes(needle) ||
         a.name.toLowerCase().includes(needle) ||
         a.group.toLowerCase().includes(needle),
     );
+  }, [sorted, search]);
+
+  // Searching is a deliberate hunt, often for an account that has never been
+  // posted to. Hiding the match would answer "not found" to a question the
+  // rail can answer, so a search shows everything.
+  const searching = search.trim().length > 0;
+  const unusedCount = matching.filter(
+    (a) => (a.entries ?? 0) === 0 && a.id !== accountId,
+  ).length;
+  const showAll = showUnused || searching;
+
+  /**
+   * The chart as a tree: class → section → accounts.
+   *
+   * Built from the accounts themselves, so a section a community invents
+   * appears here without anything else changing.
+   *
+   * Narrowed to accounts carrying postings unless asked otherwise. A seeded
+   * chart is mostly empty — a community that runs no Ajo and owns no
+   * equipment still carries accounts for both — and a rail listing all forty
+   * buried the dozen worth opening.
+   */
+  const tree = useMemo(() => {
+    const visible = showAll
+      ? matching
+      : matching.filter(
+          // The selected account is always listed, even with nothing in it.
+          // The chart of accounts links straight here, and following that
+          // link for an empty account would otherwise show it open on the
+          // right with nothing highlighted on the left.
+          (a) => (a.entries ?? 0) > 0 || a.id === accountId,
+        );
 
     return ACCOUNT_CLASSES.map((klass) => {
-      const mine = matching.filter((a) => a.type === klass.type);
+      const mine = visible.filter((a) => a.type === klass.type);
       const sections = [...new Set(mine.map((a) => a.group))].sort().map((group) => ({
         group,
         accounts: mine.filter((a) => a.group === group),
       }));
       return { klass, sections, count: mine.length };
     }).filter((branch) => branch.count > 0);
-  }, [sorted, search]);
+  }, [matching, showAll, accountId]);
 
   const { data, loading } = useQuery<AccountLedger>(
     () => portalApi.accountLedger(communityId, accountId),
@@ -180,7 +223,9 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
 
             {tree.length === 0 ? (
               <p className="p-5 text-center text-[12.5px] text-slate-500">
-                No account matches “{search}”.
+                {searching
+                  ? `No account matches “${search}”.`
+                  : 'Nothing has been posted to any account yet.'}
               </p>
             ) : (
               <nav className="p-2">
@@ -229,6 +274,14 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                             >
                               {account.name}
                             </span>
+                            {/* How much is in it, so the rail answers "which
+                                of these is worth opening?" without opening
+                                each one. */}
+                            {(account.entries ?? 0) > 0 ? (
+                              <span className="tnum shrink-0 text-[11px] text-slate-400">
+                                {account.entries}
+                              </span>
+                            ) : null}
                             {account.id === accountId ? (
                               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-brand-600" />
                             ) : null}
@@ -240,6 +293,30 @@ export function LedgerClient({ accounts }: { accounts: BookAccount[] }) {
                 ))}
               </nav>
             )}
+
+            {/* Shown rather than hidden, just not first: an account that has
+                never been posted to is still one you may need to open — to
+                check it really is empty, or before posting to it. */}
+            {unusedCount > 0 && !searching ? (
+              <button
+                type="button"
+                onClick={() => setShowUnused(!showUnused)}
+                className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 focus-ring"
+              >
+                <ChevronRight
+                  className={cn(
+                    'h-3.5 w-3.5 text-slate-400 transition-transform',
+                    showUnused && 'rotate-90',
+                  )}
+                />
+                <span className="flex-1 text-[12.5px] text-slate-600">
+                  {unusedCount} never used
+                </span>
+                <span className="text-[11.5px] text-slate-400">
+                  {showUnused ? 'Hide' : 'Show'}
+                </span>
+              </button>
+            ) : null}
           </Card>
         </aside>
 
