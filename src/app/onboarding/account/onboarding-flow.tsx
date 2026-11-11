@@ -1,70 +1,60 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { Building2, Check, CheckCircle2, MailCheck, ShieldCheck, UserPlus } from 'lucide-react';
-import {
-  Button,
-  Callout,
-  Field,
-  Input,
-  PasswordInput,
-  Segmented,
-  Textarea,
-} from '@/components/ui';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Building2, Check, MailCheck, ShieldCheck, UserRound } from 'lucide-react';
+import { Button, Callout, Field, Input, PasswordInput, Segmented } from '@/components/ui';
 import { post } from '@/lib/api';
 import { cn } from '@/lib/format';
 
-type Step = 'account' | 'verify' | 'community' | 'done';
+type Step = 'details' | 'verify';
 
 const STEPS: Array<{ key: Step; label: string }> = [
-  { key: 'account', label: 'Your account' },
-  { key: 'verify', label: 'Verify' },
-  { key: 'community', label: 'Community' },
+  { key: 'details', label: 'Community details' },
+  { key: 'verify', label: 'Verify email' },
+];
+
+const COUNTRIES = [
+  { value: 'NGA', label: 'Nigeria' },
+  { value: 'GHA', label: 'Ghana' },
+  { value: 'KEN', label: 'Kenya' },
 ];
 
 /**
- * Three steps, in the order the API requires them:
+ * Community registration.
  *
- *   1. Create the Rendi account        POST /auth/register   (no session yet)
- *   2. Confirm the code                POST /auth/verify-otp (session starts)
- *   3. Register the community          POST /communities     (authenticated)
+ *   1. Community + administrator details   POST /community-onboarding/register
+ *   2. Confirm the code                    POST /auth/verify-otp (session starts)
+ *   3. Verification profile                a modal in the portal, not here
  *
- * Someone already signed in starts at step 3 — they have an account, they
+ * The account created in step 1 is the *organisation's*, not a person's: it
+ * signs in with the community's official email, and that address — with the
+ * official phone — is reserved platform-wide. The administrator's own email
+ * and phone are recorded as a contact and claim nothing, so the same person
+ * can still open an ordinary personal Rendi account afterwards.
+ *
+ * Someone already signed in skips straight to the details form, posting to
+ * the authenticated `POST /communities` instead: they have an account, they
  * just do not have a community.
  */
 export function OnboardingFlow({ signedIn }: { signedIn: boolean }) {
-  const [step, setStep] = useState<Step>(signedIn ? 'community' : 'account');
-  const [identifier, setIdentifier] = useState('');
-  const [createdName, setCreatedName] = useState('');
+  const [step, setStep] = useState<Step>('details');
+  const [officialEmail, setOfficialEmail] = useState('');
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-      {step !== 'done' && !signedIn && <Steps current={step} />}
+      {!signedIn && <Steps current={step} />}
 
-      {step === 'account' && (
-        <AccountStep
+      {step === 'details' && (
+        <DetailsStep
+          signedIn={signedIn}
           onRegistered={(email) => {
-            setIdentifier(email);
+            setOfficialEmail(email);
             setStep('verify');
           }}
         />
       )}
 
-      {step === 'verify' && (
-        <VerifyStep identifier={identifier} onVerified={() => setStep('community')} />
-      )}
-
-      {step === 'community' && (
-        <CommunityStep
-          onCreated={(name) => {
-            setCreatedName(name);
-            setStep('done');
-          }}
-        />
-      )}
-
-      {step === 'done' && <DoneStep name={createdName} />}
+      {step === 'verify' && <VerifyStep identifier={officialEmail} />}
     </section>
   );
 }
@@ -107,29 +97,60 @@ function Steps({ current }: { current: Step }) {
   );
 }
 
-// ───────────────────────────── 1. Account ─────────────────────────────
+// ──────────────────────── 1. Community + administrator ────────────────────────
 
-function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => void }) {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+const emailBad = (v: string) => !/^\S+@\S+\.\S+$/.test(v.trim());
+const phoneBad = (v: string) => v.trim().replace(/\D/g, '').length < 10;
+
+function DetailsStep({
+  signedIn,
+  onRegistered,
+}: {
+  signedIn: boolean;
+  onRegistered: (officialEmail: string) => void;
+}) {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('NGA');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+
+  const [registrarName, setRegistrarName] = useState('');
+  const [registrarEmail, setRegistrarEmail] = useState('');
+  const [registrarPhone, setRegistrarPhone] = useState('');
+
   const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const emailInvalid = !/^\S+@\S+\.\S+$/.test(email.trim());
-  const phoneInvalid = phone.trim().replace(/\D/g, '').length < 10;
+  const nameBad = name.trim().length < 3;
+  const registrarNameBad = registrarName.trim().length < 3;
   // Mirrors the API's own rule, so a weak password is caught here rather than
   // coming back as a validation error after the round trip.
-  const passwordInvalid =
-    password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) ||
+  const passwordBad =
+    password.length < 8 ||
+    !/[a-z]/.test(password) ||
+    !/[A-Z]/.test(password) ||
     !/[\d\W]/.test(password);
   const mismatch = confirm !== password;
+
+  // The same address on both halves of the form is the one mistake this flow
+  // has to catch before the API does, because the consequence is permanent:
+  // the official address is reserved, and the person who used their own would
+  // never be able to open a personal account on it.
+  const sameAsOfficial =
+    !emailBad(email) && email.trim().toLowerCase() === registrarEmail.trim().toLowerCase();
+
   const valid =
-    firstName.trim() && lastName.trim() && !emailInvalid && !phoneInvalid && !passwordInvalid && !mismatch;
+    !nameBad &&
+    !emailBad(email) &&
+    !phoneBad(phone) &&
+    !registrarNameBad &&
+    !emailBad(registrarEmail) &&
+    !phoneBad(registrarPhone) &&
+    !sameAsOfficial &&
+    (signedIn || (!passwordBad && !mismatch));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -137,25 +158,41 @@ function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => v
     setError(null);
     if (!valid || loading) return;
 
+    const payload = {
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone.trim(),
+      country,
+      registrarName: registrarName.trim(),
+      registrarEmail: registrarEmail.trim().toLowerCase(),
+      registrarPhone: registrarPhone.trim(),
+    };
+
     setLoading(true);
     try {
-      const result = await fetch('/api/auth/register', {
+      if (signedIn) {
+        // Already has an account, so the authenticated endpoint applies and
+        // there is no email to verify — straight into the portal, where the
+        // verification modal takes over.
+        await post('/communities', payload);
+        // A full load, not router.push: the community cookie is set on a
+        // fetch response and the portal shell is a server component that has
+        // to read it on a fresh request.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/dashboard';
+        return;
+      }
+
+      const res = await fetch('/api/community-onboarding/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          email: email.trim().toLowerCase(),
-          phone: phone.trim(),
-          password,
-        }),
+        body: JSON.stringify({ ...payload, password }),
       });
-      const json = await result.json().catch(() => ({}));
-      if (!result.ok) throw new Error(json?.message ?? 'Could not create the account.');
-      onRegistered(email.trim().toLowerCase());
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message ?? 'Could not register this community.');
+      onRegistered(payload.email);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the account.');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Could not register this community.');
       setLoading(false);
     }
   }
@@ -163,115 +200,195 @@ function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => v
   return (
     <>
       <Header
-        icon={<UserPlus className="h-5 w-5" />}
-        title="Create your Rendi account"
-        body="This is the account that will own the community. You will be its first officer."
+        icon={<Building2 className="h-5 w-5" />}
+        title="Register your community"
+        body="Two things: the community itself, and who is registering it. Rendi reviews every registration before a community can collect contributions."
       />
 
-      <form className="space-y-5 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
+      <form className="space-y-7 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
         {error && <Callout tone="danger">{error}</Callout>}
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field
-            label="First name"
-            htmlFor="ob-first"
-            required
-            error={touched && !firstName.trim() && 'Enter your first name.'}
-          >
-            <Input
-              id="ob-first"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              invalid={touched && !firstName.trim()}
-              autoComplete="given-name"
-              autoFocus
-            />
-          </Field>
+        <fieldset className="space-y-5">
+          <SectionLabel
+            icon={<Building2 className="h-3.5 w-3.5" />}
+            title="Community details"
+            body="These belong to the organisation, and the official email is what you will sign in with."
+          />
 
-          <Field
-            label="Last name"
-            htmlFor="ob-last"
-            required
-            error={touched && !lastName.trim() && 'Enter your last name.'}
-          >
-            <Input
-              id="ob-last"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              invalid={touched && !lastName.trim()}
-              autoComplete="family-name"
-            />
-          </Field>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field
+              className="sm:col-span-2"
+              label="Community name"
+              htmlFor="cm-name"
+              required
+              error={touched && nameBad && 'Enter at least 3 characters.'}
+            >
+              <Input
+                id="cm-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                invalid={touched && nameBad}
+                placeholder="Ikeja Traders Cooperative Society"
+                autoFocus
+              />
+            </Field>
 
-          <Field
-            label="Email"
-            htmlFor="ob-email"
-            required
-            error={touched && emailInvalid && 'Enter a valid email address.'}
-          >
-            <Input
-              id="ob-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              invalid={touched && emailInvalid}
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-          </Field>
+            <Field
+              label="Official email"
+              htmlFor="cm-email"
+              required
+              hint="The community's own address, not a personal one"
+              error={touched && emailBad(email) && 'Enter a valid email address.'}
+            >
+              <Input
+                id="cm-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                invalid={touched && emailBad(email)}
+                autoComplete="email"
+                placeholder="admin@cooperative.ng"
+              />
+            </Field>
 
-          <Field
-            label="Phone"
-            htmlFor="ob-phone"
-            required
-            error={touched && phoneInvalid && 'Enter a valid phone number.'}
-          >
-            <Input
-              id="ob-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              invalid={touched && phoneInvalid}
-              autoComplete="tel"
-              placeholder="+234 801 234 5678"
-            />
-          </Field>
+            <Field
+              label="Official phone"
+              htmlFor="cm-phone"
+              required
+              error={touched && phoneBad(phone) && 'Enter a valid phone number.'}
+            >
+              <Input
+                id="cm-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                invalid={touched && phoneBad(phone)}
+                placeholder="+234 801 234 5678"
+              />
+            </Field>
 
-          <Field
-            label="Password"
-            htmlFor="ob-pw"
-            required
-            hint="At least 8 characters, with upper and lower case and a number or symbol"
-            error={touched && passwordInvalid && 'That password does not meet the requirements.'}
-          >
-            <PasswordInput
-              id="ob-pw"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              invalid={touched && passwordInvalid}
-              autoComplete="new-password"
-            />
-          </Field>
+            <Field className="sm:col-span-2" label="Country" htmlFor="cm-country" required>
+              <Segmented
+                label="Country"
+                value={country}
+                onChange={setCountry}
+                options={COUNTRIES}
+              />
+            </Field>
 
-          <Field
-            label="Confirm password"
-            htmlFor="ob-pw2"
-            required
-            error={touched && mismatch && 'The two passwords do not match.'}
-          >
-            <PasswordInput
-              id="ob-pw2"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              invalid={touched && mismatch}
-              autoComplete="new-password"
-            />
-          </Field>
-        </div>
+            {!signedIn && (
+              <>
+                <Field
+                  label="Password"
+                  htmlFor="cm-pw"
+                  required
+                  hint="At least 8 characters, with upper and lower case and a number or symbol"
+                  error={touched && passwordBad && 'That password does not meet the requirements.'}
+                >
+                  <PasswordInput
+                    id="cm-pw"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    invalid={touched && passwordBad}
+                    autoComplete="new-password"
+                  />
+                </Field>
+
+                <Field
+                  label="Confirm password"
+                  htmlFor="cm-pw2"
+                  required
+                  error={touched && mismatch && 'The two passwords do not match.'}
+                >
+                  <PasswordInput
+                    id="cm-pw2"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    invalid={touched && mismatch}
+                    autoComplete="new-password"
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-5 border-t border-slate-200 pt-6">
+          <SectionLabel
+            icon={<UserRound className="h-3.5 w-3.5" />}
+            title="Administrator (registrar)"
+            body="You, the person registering. These stay yours — you can still open a personal Rendi account with this email and phone."
+          />
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field
+              className="sm:col-span-2"
+              label="Full name"
+              htmlFor="rg-name"
+              required
+              error={touched && registrarNameBad && 'Enter your full name.'}
+            >
+              <Input
+                id="rg-name"
+                value={registrarName}
+                onChange={(e) => setRegistrarName(e.target.value)}
+                invalid={touched && registrarNameBad}
+                autoComplete="name"
+                placeholder="Adaeze Okonkwo"
+              />
+            </Field>
+
+            <Field
+              label="Email"
+              htmlFor="rg-email"
+              required
+              error={
+                touched &&
+                ((emailBad(registrarEmail) && 'Enter a valid email address.') ||
+                  (sameAsOfficial &&
+                    'Use a different address from the official one — that address becomes the community’s and cannot also be yours.'))
+              }
+            >
+              <Input
+                id="rg-email"
+                type="email"
+                value={registrarEmail}
+                onChange={(e) => setRegistrarEmail(e.target.value)}
+                invalid={touched && (emailBad(registrarEmail) || sameAsOfficial)}
+                placeholder="you@example.com"
+              />
+            </Field>
+
+            <Field
+              label="Phone"
+              htmlFor="rg-phone"
+              required
+              error={touched && phoneBad(registrarPhone) && 'Enter a valid phone number.'}
+            >
+              <Input
+                id="rg-phone"
+                type="tel"
+                value={registrarPhone}
+                onChange={(e) => setRegistrarPhone(e.target.value)}
+                invalid={touched && phoneBad(registrarPhone)}
+                placeholder="+234 809 999 9999"
+              />
+            </Field>
+          </div>
+        </fieldset>
+
+        <Callout tone="info" title="What happens next">
+          <span className="inline-flex items-start gap-1.5">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            {signedIn
+              ? 'You will be asked for a few more details about the community, then Rendi reviews the registration. Collections, payouts and lending stay restricted until it passes.'
+              : 'Confirm the code sent to the official email, then answer a few questions about the community. Rendi reviews it from there.'}
+          </span>
+        </Callout>
 
         <div className="flex justify-end border-t border-slate-200 pt-5">
           <Button type="submit" variant="blue" size="lg" loading={loading}>
-            Create account
+            {signedIn ? 'Register community' : 'Create community account'}
           </Button>
         </div>
       </form>
@@ -281,13 +398,7 @@ function AccountStep({ onRegistered }: { onRegistered: (identifier: string) => v
 
 // ───────────────────────────── 2. Verify ─────────────────────────────
 
-function VerifyStep({
-  identifier,
-  onVerified,
-}: {
-  identifier: string;
-  onVerified: () => void;
-}) {
+function VerifyStep({ identifier }: { identifier: string }) {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -312,12 +423,18 @@ function VerifyStep({
       if (!json.session) {
         // Already-active account: there is no session to continue with.
         setError(json.message ?? 'Please sign in instead.');
+        setLoading(false);
         return;
       }
-      onVerified();
+
+      // A full load, not router.push: the session cookies were set on a fetch
+      // response, and the portal shell is a server component that has to read
+      // them on a fresh request. The verification modal waits on the other
+      // side — the registration is not finished until it is answered.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = '/dashboard';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code did not work.');
-    } finally {
       setLoading(false);
     }
   }
@@ -345,8 +462,8 @@ function VerifyStep({
     <>
       <Header
         icon={<MailCheck className="h-5 w-5" />}
-        title="Confirm your email"
-        body={`We sent a six-digit code to ${identifier}. Enter it to activate your account.`}
+        title="Confirm the official email"
+        body={`We sent a six-digit code to ${identifier}. Enter it to activate the community account.`}
       />
 
       <form className="space-y-5 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
@@ -380,212 +497,21 @@ function VerifyStep({
   );
 }
 
-// ───────────────────────────── 3. Community ─────────────────────────────
-
-function CommunityStep({ onCreated }: { onCreated: (name: string) => void }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [registrationNumber, setRegistrationNumber] = useState('');
-  const [address, setAddress] = useState('');
-  const [country, setCountry] = useState('NGA');
-  const [touched, setTouched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const nameInvalid = name.trim().length < 3;
-  const emailInvalid = !/^\S+@\S+\.\S+$/.test(email.trim());
-  const phoneInvalid = phone.trim().replace(/\D/g, '').length < 10;
-  const valid = !nameInvalid && !emailInvalid && !phoneInvalid;
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setTouched(true);
-    setError(null);
-    if (!valid || loading) return;
-
-    setLoading(true);
-    try {
-      await post('/communities', {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
-        country,
-        registrationNumber: registrationNumber.trim() || undefined,
-        address: address.trim() || undefined,
-      });
-      onCreated(name.trim());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not register this community.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function SectionLabel({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
   return (
-    <>
-      <Header
-        icon={<Building2 className="h-5 w-5" />}
-        title="Register your community"
-        body="Rendi reviews every registration before a community can collect contributions or appear in discovery."
-      />
-
-      <form className="space-y-5 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
-        {error && <Callout tone="danger">{error}</Callout>}
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field
-            className="sm:col-span-2"
-            label="Community name"
-            htmlFor="cm-name"
-            required
-            error={touched && nameInvalid && 'Enter at least 3 characters.'}
-          >
-            <Input
-              id="cm-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              invalid={touched && nameInvalid}
-              placeholder="Ikeja Traders Cooperative Society"
-              autoFocus
-            />
-          </Field>
-
-          <Field
-            label="Official email"
-            htmlFor="cm-email"
-            required
-            hint="The community's own address, not your personal one"
-            error={touched && emailInvalid && 'Enter a valid email address.'}
-          >
-            <Input
-              id="cm-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              invalid={touched && emailInvalid}
-              placeholder="admin@cooperative.ng"
-            />
-          </Field>
-
-          <Field
-            label="Official phone"
-            htmlFor="cm-phone"
-            required
-            error={touched && phoneInvalid && 'Enter a valid phone number.'}
-          >
-            <Input
-              id="cm-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              invalid={touched && phoneInvalid}
-              placeholder="+234 801 234 5678"
-            />
-          </Field>
-
-          <Field label="Country" htmlFor="cm-country" required>
-            <Segmented
-              label="Country"
-              value={country}
-              onChange={setCountry}
-              options={[
-                { value: 'NGA', label: 'Nigeria' },
-                { value: 'GHA', label: 'Ghana' },
-                { value: 'KEN', label: 'Kenya' },
-              ]}
-            />
-          </Field>
-
-          <Field
-            label="Registration number"
-            htmlFor="cm-reg"
-            optional
-            hint="CAC or state cooperative registration"
-          >
-            <Input
-              id="cm-reg"
-              value={registrationNumber}
-              onChange={(e) => setRegistrationNumber(e.target.value.toUpperCase())}
-              placeholder="RC1234567"
-            />
-          </Field>
-
-          <Field className="sm:col-span-2" label="Registered address" htmlFor="cm-address" optional>
-            <Textarea
-              id="cm-address"
-              rows={2}
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Street, city and state"
-            />
-          </Field>
-        </div>
-
-        <Callout tone="info" title="Verification protects members">
-          <span className="inline-flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            Collections, payouts, lending and your public listing stay restricted until Rendi
-            completes its review. Everything else in the portal works straight away.
-          </span>
-        </Callout>
-
-        <div className="flex justify-end border-t border-slate-200 pt-5">
-          <Button type="submit" size="lg" loading={loading}>
-            Register community
-          </Button>
-        </div>
-      </form>
-    </>
-  );
-}
-
-function DoneStep({ name }: { name: string }) {
-  const router = useRouter();
-
-  return (
-    <div className="px-6 py-10 text-center sm:px-10">
-      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-        <CheckCircle2 className="h-7 w-7" aria-hidden />
-      </span>
-      <h1 className="mt-5 text-2xl font-semibold text-navy-900">Registration submitted</h1>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
-        {name} is pending Rendi verification. Open the workspace now to add officers, set up your
-        books and invite members — you can track the verification status from Settings.
-      </p>
-      <Button
-        className="mt-6"
-        size="lg"
-        onClick={() => {
-          // A full load, not router.push: the session and community cookies
-          // were set on a fetch response, and the portal shell is a server
-          // component that has to read them on a fresh request.
-          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-          window.location.href = '/dashboard';
-        }}
-      >
-        Open community portal
-      </Button>
-      <button
-        type="button"
-        onClick={() => router.refresh()}
-        className="mt-3 block w-full text-[13px] text-slate-500 hover:text-navy-900"
-      >
-        Register another community
-      </button>
+    <div>
+      <legend className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-navy-900">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy-50 text-navy-700">
+          {icon}
+        </span>
+        {title}
+      </legend>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">{body}</p>
     </div>
   );
 }
 
-function Header({
-  icon,
-  title,
-  body,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}) {
+function Header({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
   return (
     <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
       <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-navy-50 text-navy-700">

@@ -15,8 +15,8 @@ export const MEMBER_SECTIONS: Array<{
 }> = [
   {
     href: '/members/add' as Route,
-    label: 'Add new member',
-    description: 'Invite by email — one person, a pasted list, or a CSV.',
+    label: 'Add members',
+    description: 'Invite new members or import existing members individually or by CSV.',
     icon: UserPlus,
   },
   {

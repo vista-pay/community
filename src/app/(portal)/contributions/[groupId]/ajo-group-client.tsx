@@ -31,7 +31,14 @@ import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
 import { percentOf } from '@/lib/money';
 import { InvitePanel } from '@/components/ajo/invite-panel';
-import type { AjoGroupDetail, AjoPayoutRow, ContributionBoard, PayoutPosition } from '@/types';
+import { openBlob } from '@/lib/api';
+import type {
+  AjoGroupDetail,
+  AjoMemberAgreementState,
+  AjoPayoutRow,
+  ContributionBoard,
+  PayoutPosition,
+} from '@/types';
 
 type Tab = 'board' | 'positions' | 'members';
 
@@ -475,6 +482,18 @@ export function AjoGroupClient({
                   hideOnMobile: true,
                   cell: (m) => (m.joinedAt ? date(m.joinedAt) : '—'),
                 },
+                {
+                  key: 'agreement',
+                  header: 'Agreement',
+                  cell: (m) => (
+                    <MemberAgreementCell
+                      groupId={group.id}
+                      membershipId={m.membershipId}
+                      memberName={m.name}
+                      agreement={m.agreement}
+                    />
+                  ),
+                },
               ]}
               empty={
                 <EmptyState
@@ -518,5 +537,87 @@ export function AjoGroupClient({
         }
       />
     </>
+  );
+}
+
+/**
+ * One member's signed membership agreement, in the members table.
+ *
+ * The PDF is rendered by the API from the frozen document the member signed,
+ * so what an officer opens here is byte-for-byte what was emailed to them —
+ * not a re-render against today's rules.
+ */
+function MemberAgreementCell({
+  groupId,
+  membershipId,
+  memberName,
+  agreement,
+}: {
+  groupId: string;
+  membershipId: string;
+  memberName: string;
+  agreement: AjoMemberAgreementState | null;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState<'view' | 'download' | null>(null);
+
+  if (!agreement) {
+    return <span className="text-xs text-slate-400">Not signed</span>;
+  }
+
+  const open = async (view: boolean) => {
+    setBusy(view ? 'view' : 'download');
+    try {
+      const { blob, filename } = await portalApi.ajoAgreementPdf(groupId, membershipId);
+      openBlob(blob, filename, view);
+    } catch (error) {
+      toast(
+        'Could not open the agreement',
+        'error',
+        error instanceof Error ? error.message : `${memberName}'s agreement is unavailable.`,
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <Badge tone={agreement.status === 'COUNTERSIGNED' ? 'green' : agreement.status === 'VOIDED' ? 'slate' : 'amber'}>
+          {agreement.status === 'COUNTERSIGNED'
+            ? 'In force'
+            : agreement.status === 'VOIDED'
+              ? 'Void'
+              : 'Awaiting approval'}
+        </Badge>
+        {agreement.needsNameReview && <Badge tone="amber">Name check</Badge>}
+      </div>
+      <span className="text-[11px] text-slate-500">{agreement.reference}</span>
+      <div className="flex gap-1">
+        <button
+          type="button"
+          className="text-xs font-semibold text-blue-700 hover:underline disabled:opacity-50"
+          disabled={busy !== null}
+          onClick={() => void open(true)}
+        >
+          {busy === 'view' ? 'Opening…' : 'View'}
+        </button>
+        <span className="text-xs text-slate-300">·</span>
+        <button
+          type="button"
+          className="text-xs font-semibold text-blue-700 hover:underline disabled:opacity-50"
+          disabled={busy !== null}
+          onClick={() => void open(false)}
+        >
+          {busy === 'download' ? 'Saving…' : 'PDF'}
+        </button>
+      </div>
+      {/* A seat in force whose copy never reached the member is the one
+          failure state this feature must not hide. */}
+      {agreement.status === 'COUNTERSIGNED' && !agreement.emailedAt && (
+        <span className="text-[11px] text-amber-700">Copy not emailed yet</span>
+      )}
+    </div>
   );
 }

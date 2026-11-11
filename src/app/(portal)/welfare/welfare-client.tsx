@@ -19,7 +19,18 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { date as formatDate, money as formatCurrency } from '@/lib/format';
-import type { WelfareRequestDetail, WelfareRequestRow, WelfareStatus } from '@/types';
+import {
+  AccountSelector,
+  SYSTEM_COA_CHOICE,
+  coaChoicePayload,
+  isCoaChoiceComplete,
+} from '@/components/accounting/account-selector';
+import type {
+  CoaChoice,
+  WelfareRequestDetail,
+  WelfareRequestRow,
+  WelfareStatus,
+} from '@/types';
 
 const STATUS_META: Record<WelfareStatus, { label: string; tone: 'green' | 'amber' | 'red' | 'slate' | 'navy' }> = {
   SUBMITTED: { label: 'Submitted', tone: 'navy' },
@@ -48,6 +59,10 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState<'APPROVED' | 'PAID' | null>(null);
+  // Chosen at approval, because that is when the committee knows what kind
+  // of support this is. Reset per request so one decision cannot carry its
+  // account over to the next.
+  const [ledgerAccount, setLedgerAccount] = useState<CoaChoice>(SYSTEM_COA_CHOICE);
 
   const { data, refresh } = useQuery<WelfareRequestRow[]>(
     () => portalApi.welfareQueue(communityId),
@@ -74,11 +89,12 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
   // Recording a decision moves no money; marking a request PAID does. The gate
   // covers both because the server decides which one needs the owner's code,
   // so a screen cannot forget to ask on the step that pays out.
-  const act = useMoneyOutOtp<{ status: string; note?: string }>({
+  const act = useMoneyOutOtp<{ status: string; note?: string; ledgerAccount?: CoaChoice }>({
     perform: (extra, body) => portalApi.reviewWelfare(activeId!, body, extra),
     onDone: async () => {
       setConfirming(null);
       setNote('');
+      setLedgerAccount(SYSTEM_COA_CHOICE);
       await Promise.all([refresh(), detail.refresh()]);
     },
     successMessage: 'Done — the member has been notified in their request thread',
@@ -329,7 +345,7 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
         confirmLabel="Approve request"
         loading={act.pending}
         body={
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p>
               You are approving <strong>{request ? formatCurrency(request.amount) : ''}</strong> for
               this request.
@@ -337,11 +353,28 @@ export function WelfareClient({ initial }: { initial: WelfareRequestRow[] }) {
             <p className="font-medium text-navy-900">
               Approval will not debit the community wallet. Disbursement remains a separate action.
             </p>
+            {/* Asked here rather than at disbursement: the committee
+                deciding knows whether this is medical or bereavement, and
+                whoever presses "mark paid" days later may not. */}
+            <AccountSelector
+              selection="WELFARE_GRANT"
+              value={ledgerAccount}
+              onChange={setLedgerAccount}
+              idPrefix="welfare-coa"
+            />
           </div>
         }
-        onConfirm={() =>
-          void act.run({ status: 'APPROVED', note: note.trim() || undefined })
-        }
+        onConfirm={() => {
+          // Guarded here rather than by disabling the button: the only way
+          // to be incomplete is a half-filled new account, and the selector
+          // already shows what is missing.
+          if (!isCoaChoiceComplete(ledgerAccount)) return;
+          void act.run({
+            status: 'APPROVED',
+            note: note.trim() || undefined,
+            ledgerAccount: coaChoicePayload(ledgerAccount),
+          });
+        }}
       />
 
       <ConfirmDialog

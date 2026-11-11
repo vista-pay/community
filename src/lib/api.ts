@@ -85,7 +85,13 @@ export const post = <T,>(
   options: Omit<RequestOptions, 'body' | 'method'> = {},
 ) => api<T>(path, { ...options, method: 'POST', body });
 export const patch = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'PATCH', body });
-export const del = <T,>(path: string) => api<T>(path, { method: 'DELETE' });
+/**
+ * A DELETE may carry a body. Lifting a suspension sends which scopes to
+ * restore and an optional note to the member — the method is DELETE because
+ * it removes a restriction, but it is not a bare "delete this id".
+ */
+export const del = <T,>(path: string, body?: unknown) =>
+  api<T>(path, { method: 'DELETE', body });
 
 export async function postBlob(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch(`/api/proxy${path.startsWith('/') ? path : `/${path}`}`, {
@@ -100,6 +106,48 @@ export async function postBlob(path: string, body: unknown): Promise<{ blob: Blo
   const disposition = res.headers.get('content-disposition') ?? '';
   const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'loan-quote.pdf';
   return { blob: await res.blob(), filename };
+}
+
+/**
+ * Fetch a document the API already holds, rather than one computed from a
+ * body. The filename the server chose is kept: a signed agreement is filed
+ * under its own reference, and renaming it on the way down would lose that.
+ */
+export async function getBlob(
+  path: string,
+  fallbackFilename = 'document.pdf',
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api/proxy${path.startsWith('/') ? path : `/${path}`}`);
+  if (!res.ok) {
+    const json = await res.json().catch(() => null);
+    throw new ApiError(json?.message ?? json?.error ?? `Request failed (${res.status})`, res.status, json);
+  }
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? fallbackFilename;
+  return { blob: await res.blob(), filename };
+}
+
+/**
+ * Hand a downloaded document to the browser.
+ *
+ * `view` opens it in a tab for a quick look; otherwise it saves. Either way
+ * the object URL is revoked, because a leaked one keeps the whole file in
+ * memory for the life of the tab.
+ */
+export function openBlob(blob: Blob, filename: string, view = false) {
+  const url = URL.createObjectURL(blob);
+  if (view) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } else {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+  // Long enough for the tab to have loaded the bytes it was handed.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Auth endpoints live on this app, not behind the proxy. */

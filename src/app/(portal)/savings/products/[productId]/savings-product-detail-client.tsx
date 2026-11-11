@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, Edit3, Lock, PiggyBank, Users } from 'lucide-react';
+import { ArrowLeft, BookOpen, CheckCircle2, Edit3, Lock, PiggyBank, Users } from 'lucide-react';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { AmountInput, Badge, Button, Card, DataTable, Field, Input, PageHeader, Select, StatusBadge, Textarea } from '@/components/ui';
@@ -71,6 +71,7 @@ export function SavingsProductDetailClient({ product, accounts }: { product: Sav
           <Summary icon={<Users className="h-4 w-4" />} label="Member accounts" value={String(accounts.length)} />
           <Summary icon={<PiggyBank className="h-4 w-4" />} label="Combined balance" value={money(accounts.reduce((total, account) => total + Number(account.balance), 0), product.currencyCode)} />
           <Summary icon={product.withdrawalPolicy === 'LOCKED' ? <Lock className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} label="Withdrawal rule" value={policyLabel(product)} />
+          <Summary icon={<BookOpen className="h-4 w-4" />} label="Savings control account" value={product.depositAccountCode ?? '2000 (standard)'} />
         </div>
       </Card>
     </div>

@@ -6,9 +6,16 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, Lock, PiggyBank, ShieldCheck } from 'lucide-react';
 import { AmountInput, Badge, Button, Card, Field, Input, PageHeader, Select, Textarea } from '@/components/ui';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
+import {
+  AccountSelector,
+  SYSTEM_COA_CHOICE,
+  coaChoicePayload,
+  isCoaChoiceComplete,
+} from '@/components/accounting/account-selector';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { money } from '@/lib/format';
 import { portalApi } from '@/services/portal';
+import type { CoaChoice } from '@/types';
 
 type SavingsProductPayload = {
   name: string;
@@ -18,6 +25,8 @@ type SavingsProductPayload = {
   withdrawalPolicy: string;
   noticeDays: number;
   termMonths: number;
+  /** Omitted when the product uses the account the posting rules name. */
+  ledgerAccount?: CoaChoice;
 };
 
 export function SavingsProductForm() {
@@ -30,6 +39,7 @@ export function SavingsProductForm() {
   const [policy, setPolicy] = useState('LOCKED');
   const [notice, setNotice] = useState('30');
   const [termMonths, setTermMonths] = useState('3');
+  const [ledgerAccount, setLedgerAccount] = useState<CoaChoice>(SYSTEM_COA_CHOICE);
 
   const create = useMoneyOutOtp<SavingsProductPayload>({
     perform: (extra, payload) => portalApi.createSavingsProduct(communityId, payload, extra),
@@ -45,6 +55,7 @@ export function SavingsProductForm() {
     withdrawalPolicy: policy,
     noticeDays: policy === 'NOTICE' ? Number(notice) : 0,
     termMonths: Number(termMonths),
+    ledgerAccount: coaChoicePayload(ledgerAccount),
   });
 
   const withdrawalLabel = policy === 'LOCKED' ? 'No withdrawals' : policy === 'NOTICE' ? `${notice || 0} days notice` : 'Any time';
@@ -85,8 +96,16 @@ export function SavingsProductForm() {
         <Field label="Description" htmlFor="description" optional hint="This appears when members choose a product."><Textarea id="description" rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
         <div className="space-y-5"><Field label="Minimum monthly payment" htmlFor="minimum"><AmountInput id="minimum" value={minimum} onChange={setMinimum} placeholder="e.g. 5,000" /></Field><Field label="Withdrawal policy" htmlFor="policy" required><Select id="policy" value={policy} onChange={(event) => setPolicy(event.target.value)}><option value="LOCKED">Not permitted</option><option value="NOTICE">After notice</option><option value="ANYTIME">Any time</option></Select></Field></div>
         {policy === 'NOTICE' && <Field label="Notice period" htmlFor="notice" required><Input id="notice" type="number" min="1" max="365" suffix="days" value={notice} onChange={(event) => setNotice(event.target.value)} /></Field>}
+        <div className="sm:col-span-2">
+          <AccountSelector
+            selection="SAVINGS_PRODUCT"
+            value={ledgerAccount}
+            onChange={setLedgerAccount}
+            idPrefix="savings-coa"
+          />
+        </div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:px-6"><Button variant="secondary" disabled={create.pending} onClick={() => router.back()}>Cancel</Button><Button disabled={name.trim().length < 2 || Number(termMonths) < 1} loading={create.pending} onClick={() => void submit()}>Create savings product</Button></div>
+      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:px-6"><Button variant="secondary" disabled={create.pending} onClick={() => router.back()}>Cancel</Button><Button disabled={name.trim().length < 2 || Number(termMonths) < 1 || !isCoaChoiceComplete(ledgerAccount)} loading={create.pending} onClick={() => void submit()}>Create savings product</Button></div>
     </Card>
     <MoneyOutOtpDialog gate={create} />
   </>;

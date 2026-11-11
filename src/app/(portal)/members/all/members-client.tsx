@@ -24,6 +24,7 @@ import { portalApi } from '@/services/portal';
 import { date, money } from '@/lib/format';
 import { downloadCsv } from '@/lib/csv';
 import type { MemberRow } from '@/types';
+import { isPlainMember } from '@/lib/roles';
 
 /** Stable empty result: `?? []` inline defeats the memos below. */
 const NONE: never[] = [];
@@ -84,7 +85,7 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
       header: 'Role',
       hideOnMobile: true,
       cell: (m) => (
-        <Badge tone={m.role === 'COMMUNITY_MEMBER' ? 'slate' : 'navy'}>
+        <Badge tone={isPlainMember(m.role) ? 'slate' : 'navy'}>
           {m.title ?? m.role.replace('COMMUNITY_', '').toLowerCase()}
         </Badge>
       ),
@@ -111,7 +112,23 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
         <span className="tnum">{m.loanBalance === '0.00' ? '—' : money(m.loanBalance)}</span>
       ),
     },
-    { key: 'status', header: 'Status', cell: (m) => <StatusBadge status={m.status.toLowerCase()} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      // A suspension is the thing an officer most needs to spot while
+      // scanning the register, and it is invisible in `status` — a suspended
+      // member stays ACTIVE so they can still read why.
+      cell: (m) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={m.status.toLowerCase()} />
+          {m.suspension && (
+            <Badge tone="red" dot>
+              {m.suspension.isFull ? 'Suspended' : `${m.suspension.scopes.length} paused`}
+            </Badge>
+          )}
+        </span>
+      ),
+    },
     {
       key: 'joined',
       header: 'Joined',
@@ -156,7 +173,7 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
               Export
             </Button>
             <LinkButton href="/members/add" icon={<UserPlus className="h-4 w-4" />}>
-              Add new member
+              Add members
             </LinkButton>
           </>
         }

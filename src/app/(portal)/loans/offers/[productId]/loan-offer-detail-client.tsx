@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CalendarClock, Edit3, FileText, Percent, Users } from 'lucide-react';
+import { ArrowLeft, BookOpen, CalendarClock, Edit3, FileText, Percent, Users } from 'lucide-react';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { AmountInput, Badge, Button, Card, Field, Input, LinkButton, PageHeader, Select, Textarea } from '@/components/ui';
@@ -62,7 +62,7 @@ export function LoanOfferDetailClient({ product }: { product: LoanProduct }) {
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer overview</p><p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">{product.description || 'No description has been added.'}</p></div><Badge tone={product.status === 'ACTIVE' ? 'green' : 'amber'}>{product.status === 'ACTIVE' ? 'Available to members' : 'Paused'}</Badge></div>
         <dl className="grid gap-px bg-slate-200 sm:grid-cols-3"><Metric label="Rate" value={product.rateLabel} /><Metric label="Loan range" value={`${money(product.minPrincipal, product.currencyCode, { decimals: false })} – ${money(product.maxPrincipal, product.currencyCode, { decimals: false })}`} /><Metric label="Available tenors" value={`${product.tenorMonths.join(', ')} months`} /></dl>
       </Card>
-      <Card className="p-5 sm:p-6"><p className="text-sm font-semibold text-navy-900">At a glance</p><div className="mt-4 space-y-4"><Summary icon={<Users className="h-4 w-4" />} label="Loans on this offer" value={String(product.loanCount)} /><Summary icon={<CalendarClock className="h-4 w-4" />} label="Repayment frequency" value={product.repaymentFrequency === 'WEEKLY' ? 'Weekly' : 'Monthly'} /><Summary icon={<Percent className="h-4 w-4" />} label="Processing fee" value={`${(Number(product.processingFeePercent) * 100).toFixed(2)}%`} /></div></Card>
+      <Card className="p-5 sm:p-6"><p className="text-sm font-semibold text-navy-900">At a glance</p><div className="mt-4 space-y-4"><Summary icon={<Users className="h-4 w-4" />} label="Loans on this offer" value={String(product.loanCount)} /><Summary icon={<CalendarClock className="h-4 w-4" />} label="Repayment frequency" value={product.repaymentFrequency === 'WEEKLY' ? 'Weekly' : 'Monthly'} /><Summary icon={<Percent className="h-4 w-4" />} label="Processing fee" value={`${(Number(product.processingFeePercent) * 100).toFixed(2)}%`} /><Summary icon={<BookOpen className="h-4 w-4" />} label="Loans receivable account" value={product.receivableAccountCode ?? '1100 (standard)'} /></div></Card>
     </div>
 
     <div className="mt-5 grid gap-5 md:grid-cols-2">

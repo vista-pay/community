@@ -42,7 +42,7 @@ export function PendingMembersClient({
         }
         actions={
           <LinkButton size="sm" href={'/members/add' as Route}>
-            Add new member
+            Add members
           </LinkButton>
         }
       />

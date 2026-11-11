@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { API_BASE } from '@/lib/constants';
 import { setActiveCommunityId, writeSession } from '@/lib/session';
 import { readUpstreamError } from '@/lib/upstream';
+import { isOfficerRole } from '@/lib/roles';
 
 /**
  * Signs an officer in and keeps the tokens server-side.
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     communitiesJson?.data ?? [];
 
   const administrable = communities.filter(
-    (c) => c.membershipStatus === 'ACTIVE' && c.role !== 'COMMUNITY_MEMBER',
+    (c) => c.membershipStatus === 'ACTIVE' && isOfficerRole(c.role),
   );
 
   if (administrable[0]) await setActiveCommunityId(administrable[0].id);

@@ -26,10 +26,17 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useSession } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
-import { humanise, money } from '@/lib/format';
+import { date, humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
 import type { AjoJoinRequestRow, CommunityGroupRow } from '@/types';
 import { InviteButton } from '@/components/ajo/invite-panel';
+import {
+  AccountSelector,
+  SYSTEM_COA_CHOICE,
+  coaChoicePayload,
+  isCoaChoiceComplete,
+} from '@/components/accounting/account-selector';
+import type { CoaChoice } from '@/types';
 
 export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] }) {
   const { community } = useSession();
@@ -224,10 +231,14 @@ export function CreateGroupForm() {
   const [payoutSelectionMode, setPayoutSelectionMode] = useState<string>('RANDOM_DRAW');
   const [selectionDeadline, setSelectionDeadline] = useState('');
   const [rules, setRules] = useState(DEFAULT_RULES);
+  // Whatever else this group agreed. Kept separate from the three rules every
+  // group has so an empty box can never be submitted as a rule.
+  const [extraRules, setExtraRules] = useState<string[]>([]);
   const [feeModel, setFeeModel] = useState<'FREE' | 'CONTRIBUTION_MARKUP' | 'PAYOUT_DEDUCTION'>('FREE');
   const [feePercent, setFeePercent] = useState('');
   const [lateFeePercent, setLateFeePercent] = useState('');
   const [postPayoutLateFeePercent, setPostPayoutLateFeePercent] = useState('');
+  const [ledgerAccount, setLedgerAccount] = useState<CoaChoice>(SYSTEM_COA_CHOICE);
 
   const create = useMutation(
     () =>
@@ -260,7 +271,13 @@ export function CreateGroupForm() {
           postPayoutLateFeePercent: postPayoutLateFeePercent || '0',
           revenueRecipient: 'COMMUNITY',
         },
-        rules,
+        rules: {
+          ...rules,
+          // Blank boxes are not rules — they would still be numbered on every
+          // member's signed agreement.
+          memberRules: extraRules.map((r) => r.trim()).filter(Boolean),
+        },
+        ledgerAccount: coaChoicePayload(ledgerAccount),
       }),
     {
       onSuccess: async () => {
@@ -283,6 +300,7 @@ export function CreateGroupForm() {
     (feeModel === 'FREE' || (Number(feePercent) > 0 && Number(feePercent) <= 100)) &&
     Number(lateFeePercent || 0) >= 0 && Number(lateFeePercent || 0) <= 100 &&
     Number(postPayoutLateFeePercent || 0) >= Number(lateFeePercent || 0) && Number(postPayoutLateFeePercent || 0) <= 100 &&
+    isCoaChoiceComplete(ledgerAccount) &&
     Object.values(rules).every((r) => r.trim().length > 0);
 
   return (
@@ -419,8 +437,23 @@ export function CreateGroupForm() {
           {feeModel !== 'FREE' || Number(lateFeePercent) > 0 ? <Callout tone="info" className="mt-3">{feeModel === 'CONTRIBUTION_MARKUP' ? `Each member pays their contribution plus ${feePercent || '0'}%.` : feeModel === 'PAYOUT_DEDUCTION' ? `${feePercent || '0'}% is deducted from each round payout.` : 'No community charge is added to standard contributions.'} Late charges are community revenue{Number(postPayoutLateFeePercent) > 0 ? ` and rise to ${postPayoutLateFeePercent}% after payout` : ''}.</Callout> : null}
         </div>
 
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="text-lg font-semibold text-navy-900">5. Where it sits in your books</h2>
+          <p className="mb-4 mt-1 text-base leading-relaxed text-slate-600">
+            Contributions collected for this group are held as money you owe its members until the
+            round pays out. Most groups share one account; give this one its own line if you report
+            it separately.
+          </p>
+          <AccountSelector
+            selection="CONTRIBUTION_GROUP"
+            value={ledgerAccount}
+            onChange={setLedgerAccount}
+            idPrefix="group-coa"
+          />
+        </div>
+
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-5 sm:p-6">
-          <h2 className="text-lg font-semibold text-navy-900">5. Member rules</h2>
+          <h2 className="text-lg font-semibold text-navy-900">6. Member rules</h2>
           <p className="mb-4 mt-1 text-base leading-relaxed text-slate-600">
             Every member reads these and accepts them before joining. Edit them to match what
             your group actually agreed.
@@ -451,6 +484,55 @@ export function CreateGroupForm() {
               />
             </Field>
           </div>
+
+          <div className="mt-5 border-t border-emerald-100 pt-5">
+            <h3 className="text-base font-semibold text-navy-900">Your own rules</h3>
+            <p className="mb-3 mt-1 text-base leading-relaxed text-slate-600">
+              Anything else this group agreed — meeting attendance, payment deadlines, proxies at
+              the draw. Each one is numbered on the agreement every member signs.
+            </p>
+            <div className="space-y-2">
+              {extraRules.map((rule, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <span className="mt-3 w-7 shrink-0 text-sm font-semibold text-slate-500">
+                    R{index + 4}
+                  </span>
+                  <Textarea
+                    aria-label={`Additional member rule ${index + 1}`}
+                    rows={2}
+                    value={rule}
+                    placeholder="Pay by the 5th of the month. Payment after the 5th is late."
+                    onChange={(e) =>
+                      setExtraRules((list) =>
+                        list.map((r, i) => (i === index ? e.target.value : r)),
+                      )
+                    }
+                  />
+                  <Button
+                    variant="secondary"
+                    className="mt-1 shrink-0"
+                    aria-label={`Remove rule ${index + 1}`}
+                    onClick={() => setExtraRules((list) => list.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="secondary"
+              className="mt-3"
+              onClick={() => setExtraRules((list) => [...list, ''])}
+            >
+              Add a rule
+            </Button>
+          </div>
+
+          <Callout tone="info" className="mt-4">
+            These rules become part of a binding membership agreement. Each member signs it with
+            their full name before they can request a seat, and gets the signed PDF by email once
+            you approve them.
+          </Callout>
         </div>
       </div></Card>
       <div className="sticky bottom-3 flex flex-wrap justify-end gap-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur"><Link href="/contributions"><Button variant="secondary" size="lg">Cancel</Button></Link><Button size="lg" disabled={!valid} loading={create.pending} onClick={() => void create.run()}>Create group</Button></div>
@@ -522,6 +604,33 @@ function JoinRequestsModal({
                 {humanise(r.kycTier)}
               </Badge>
             </div>
+
+            {/* What they signed. Approving is the community's countersignature
+                on it, so it belongs on the screen where that happens. */}
+            {r.agreement ? (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold tracking-wide text-slate-500">SIGNED AS</p>
+                <p className="mt-0.5 font-serif text-lg italic text-navy-900">
+                  {r.agreement.signedFullName}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {r.agreement.reference} · {date(r.agreement.signedAt)}
+                </p>
+                {r.agreement.needsNameReview && (
+                  <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs leading-relaxed text-amber-900">
+                    Spelling differs from their verified name,{' '}
+                    <strong>{r.agreement.nameOfRecord}</strong>. They confirmed it. Check it reads
+                    as the same person before you approve.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                No signed agreement on this request — it predates the membership agreement. Approve
+                only if you hold their consent another way.
+              </p>
+            )}
+
             <div className="mt-3 flex gap-2">
               <Button
                 variant="secondary"

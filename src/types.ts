@@ -37,6 +37,12 @@ export interface CommunitySummary {
   memberCount: number;
   /** Verified but the public listing page is still a draft: the portal gates on this. */
   listingSetupRequired: boolean;
+  /**
+   * Registered but the verification profile has not been submitted. Owner
+   * only — an officer cannot answer for the community, so the portal must not
+   * wall them behind a form they are not allowed to send.
+   */
+  verificationProfileRequired: boolean;
 }
 
 export interface PortalSession {
@@ -46,6 +52,82 @@ export interface PortalSession {
 }
 
 export type CommunityStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED' | 'REJECTED';
+
+/** Size bands offered in the verification modal; mirrors the API's enum. */
+export const COMMUNITY_SIZE_BANDS = ['1-10', '11-50', '51-200', '201-1000', '1000+'] as const;
+
+/** What kind of body this is — it changes which evidence a reviewer expects. */
+export const COMMUNITY_TYPES = [
+  { value: 'COOPERATIVE', label: 'Cooperative society' },
+  { value: 'ASSOCIATION', label: 'Association' },
+  { value: 'THRIFT_GROUP', label: 'Thrift / ajo group' },
+  { value: 'ALUMNI', label: 'Alumni group' },
+  { value: 'RELIGIOUS', label: 'Religious body' },
+  { value: 'ESTATE', label: 'Estate or residents’ group' },
+  { value: 'TRADE_UNION', label: 'Trade union or guild' },
+  { value: 'OTHER', label: 'Something else' },
+] as const;
+
+// ───────────────────────── Roles & posts ─────────────────────────
+
+/**
+ * A post or standing role inside one community.
+ *
+ * Scoped to the community, not the platform: two cooperatives can each have a
+ * President with entirely different powers, and renaming one changes nothing
+ * for the other.
+ */
+export interface CommunityRole {
+  id: string;
+  /** Machine key — REGISTRAR, PRESIDENT, CUSTOM_WELFARE_OFFICER. Never shown. */
+  name: string;
+  label: string;
+  description: string | null;
+  /** Seeded on registration and undeletable, though still renameable. */
+  isSystem: boolean;
+  /** One holder at a time: assigning it is a handover, not an addition. */
+  isElected: boolean;
+  /** The registrar and plain membership — structural, cannot be deleted. */
+  isProtected: boolean;
+  rank: number;
+  permissions: Array<{ resource: string; action: string }>;
+  holders: Array<{
+    memberId: string;
+    userId: string;
+    name: string;
+    email: string;
+    title: string | null;
+    since: IsoDate;
+  }>;
+}
+
+export interface RoleInput {
+  label: string;
+  description?: string;
+  isElected?: boolean;
+  permissions: Array<{ resource: string; action: string }>;
+}
+
+export interface RolePermissionVocabulary {
+  resources: Array<{ resource: string; label: string; description: string }>;
+  actions: Array<{ value: string; label: string }>;
+}
+
+/** What the verification modal sends. */
+export interface VerificationProfileInput {
+  country: string;
+  communityType: string;
+  companySize: string;
+  hasExistingMembers: boolean;
+  existingMemberCount?: number;
+  address: string;
+  city: string;
+  state: string;
+  foundedYear?: number;
+  registrationNumber?: string;
+  website?: string;
+  cacDocumentUrl?: string;
+}
 
 // ───────────────────────────── Dashboard ─────────────────────────────
 
@@ -187,6 +269,36 @@ export interface MemberRow {
   loanBalance: Money;
   unpaidFines: number;
   ajoGroupIds: string[];
+  suspension: MemberSuspension | null;
+}
+
+// ───────────────────────── Member suspension ─────────────────────────
+
+export type SuspensionScope =
+  | 'CONTRIBUTIONS'
+  | 'SAVINGS'
+  | 'LOANS'
+  | 'WELFARE'
+  | 'OPPORTUNITIES';
+
+/** Null on a member means nothing is suspended. */
+export interface MemberSuspension {
+  scopes: SuspensionScope[];
+  /** True when every scope is held — suspended from everything. */
+  isFull: boolean;
+  reason: string | null;
+  since: IsoDate | null;
+  suspendedBy: { id: string; name: string } | null;
+}
+
+/** Served by the API so the dialog is not a second copy of the wording. */
+export interface SuspensionScopeOption {
+  scope: SuspensionScope;
+  label: string;
+  /** What suspending this stops, in the words the member is shown. */
+  blocks: string;
+  /** What carries on regardless. */
+  stillAllowed: string;
 }
 
 export interface StaffInvitation {
@@ -212,6 +324,7 @@ export interface MemberDetail {
   role: string;
   title: string | null;
   status: MemberStatus;
+  suspension: MemberSuspension | null;
   joinedAt: IsoDate;
   kyc: string;
   address: string | null;
@@ -670,6 +783,11 @@ export interface SavingsProduct {
   currencyCode: string;
   isActive: boolean;
   termMonths: number;
+  /**
+   * The liability account deposits on this product are controlled by. Null
+   * when it uses the one the posting rules name.
+   */
+  depositAccountCode: string | null;
   _count?: { accounts: number };
 }
 
@@ -784,7 +902,21 @@ export interface LoanProduct {
   requiredApprovals: string[];
   currencyCode: string;
   status: 'ACTIVE' | 'PAUSED';
+  /**
+   * The receivable account loans on this offer sit in. Null when it uses the
+   * one the posting rules name, which is the case for most communities.
+   */
+  receivableAccountCode: string | null;
   loanCount: number;
+}
+
+/** One row of a quoted repayment plan. */
+export interface LoanQuoteInstalment {
+  number: number;
+  dueDate: IsoDate;
+  amount: Money;
+  /** What is still owed once this instalment is paid. Zero on the last row. */
+  balanceAfter: Money;
 }
 
 export interface LoanQuote {
@@ -798,6 +930,13 @@ export interface LoanQuote {
   instalments: number;
   perInstalment: Money;
   finalInstalment: Money;
+  repaymentFrequency: string;
+  /**
+   * Instalment by instalment, with dates running from the day the quote was
+   * prepared. The binding schedule is set at disbursement, which is why
+   * every surface that shows this says so.
+   */
+  schedule: LoanQuoteInstalment[];
   currencyCode: string;
 }
 
@@ -877,6 +1016,7 @@ export interface AjoGroupDetail {
     role: string;
     status: string;
     joinedAt: IsoDate | null;
+    agreement: AjoMemberAgreementState | null;
   }>;
   cycles: Array<{
     id: string;
@@ -1046,6 +1186,54 @@ export interface ServiceRequest {
   service: ServiceCatalogItem;
 }
 
+// ────────────────── Choosing where something posts ──────────────────
+
+export type CoaSelectionKey =
+  | 'SAVINGS_PRODUCT'
+  | 'CONTRIBUTION_GROUP'
+  | 'LOAN_PRODUCT'
+  | 'WELFARE_GRANT';
+
+/** What the officer is choosing, in the API's own words. */
+export interface CoaSelectionSpec {
+  key: CoaSelectionKey;
+  label: string;
+  question: string;
+  type: BookAccountType;
+  group: string;
+  /** Which postings this account appears on. Shown read-only. */
+  postings: string[];
+  nameHint: string;
+}
+
+export interface CoaOptions {
+  selection: CoaSelectionSpec;
+  /** The account the posting rules name. Null only if the chart is unseeded. */
+  systemDefault: CoaAccountOption | null;
+  /** Same group as the default — the near-certain alternatives. */
+  suggested: CoaAccountOption[];
+  /** Right type, different group. Valid, but worth a second look. */
+  others: CoaAccountOption[];
+  /** What a new account would be numbered. */
+  nextCode: string;
+}
+
+export interface CoaAccountOption {
+  id: string;
+  code: string;
+  name: string;
+  type: BookAccountType;
+  group: string;
+  description: string | null;
+}
+
+/** What a form sends. Omit it entirely to keep the system's account. */
+export interface CoaChoice {
+  mode: 'SYSTEM' | 'EXISTING' | 'NEW';
+  accountCode?: string;
+  newAccount?: { code?: string; name: string; group?: string; description?: string };
+}
+
 // ───────────────────────────── Audit ─────────────────────────────
 
 export interface AuditEntry {
@@ -1057,6 +1245,32 @@ export interface AuditEntry {
   actorType: string;
   reason: string | null;
   createdAt: IsoDate;
+}
+
+export type ActivityCategory = 'members' | 'finance' | 'governance' | 'other';
+
+export interface ActivityEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  category: ActivityCategory;
+  actorId: string | null;
+  actorType: string;
+  /** Resolved from the actor id; null for system actions and deleted users. */
+  actorName: string | null;
+  reason: string | null;
+  oldValues: unknown;
+  newValues: unknown;
+  at: IsoDate;
+}
+
+export interface ActivityFeed {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  entries: ActivityEntry[];
 }
 
 export interface NotificationItem {
@@ -1151,6 +1365,39 @@ export interface AjoJoinRequestRow {
   kycApproved: boolean;
   acceptedRules: boolean;
   requestedAt: IsoDate;
+  /** The membership agreement this applicant signed. */
+  agreement: AjoSignedAgreement | null;
+}
+
+/**
+ * A member's signature on a contribution group's membership agreement.
+ *
+ * `needsNameReview` is a near-miss the member confirmed themselves — the
+ * server already refused any name that was not theirs — so it is shown to an
+ * officer as a second look, not as a decision they have to make about
+ * identity.
+ */
+export interface AjoSignedAgreement {
+  reference: string;
+  signedFullName: string;
+  nameOfRecord: string;
+  nameMatch: 'EXACT' | 'NEAR';
+  nameMatchScore: number;
+  needsNameReview: boolean;
+  signedAt: IsoDate;
+  documentVersion: number;
+}
+
+/** The same signature as the members table reads it, after approval. */
+export interface AjoMemberAgreementState {
+  reference: string;
+  status: 'SIGNED' | 'COUNTERSIGNED' | 'VOIDED';
+  signedFullName: string;
+  needsNameReview: boolean;
+  signedAt: IsoDate;
+  countersignedAt: IsoDate | null;
+  /** When the member's copy was emailed. Null means it never went out. */
+  emailedAt: IsoDate | null;
 }
 
 /** Full loan application, as the committee reviews it. */
@@ -1477,6 +1724,14 @@ export interface PendingInvitation {
 export interface InviteResult {
   invited: number;
   outcomes: InviteOutcome[];
+}
+
+export interface ExistingMemberInvite {
+  fullName: string;
+  email: string;
+  phone: string;
+  dateJoined: string;
+  memberCode: string;
 }
 
 // ───────────────────── The loan book, officer-side ─────────────────────

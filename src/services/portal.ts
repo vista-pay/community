@@ -8,11 +8,12 @@
  * `path()` builds the community-scoped prefix once so a typo in one screen
  * cannot quietly point at the wrong community.
  */
-import { del, get, patch, post, postBlob } from '@/lib/api';
+import { del, get, getBlob, patch, post, postBlob } from '@/lib/api';
 import type { MoneyOutExtra } from '@/components/money-out-otp';
 import type {
   AccountLedger,
   AccountingPeriod,
+  ActivityFeed,
   AjoGroupDetail,
   AjoGroupSummary,
   AjoPayoutRow,
@@ -22,6 +23,9 @@ import type {
   Broadcast,
   BudgetLine,
   CashAccount,
+  CoaChoice,
+  CoaOptions,
+  CoaSelectionKey,
   CommunityDocument,
   CommunityPolicy,
   ContributionBoard,
@@ -45,6 +49,9 @@ import type {
   Meeting,
   MemberDetail,
   MemberRow,
+  MemberSuspension,
+  SuspensionScope,
+  SuspensionScopeOption,
   NotificationItem,
   PayoutPosition,
   Poll,
@@ -74,6 +81,7 @@ import type {
   DuesLeviesOverview,
   DuesLeviesCollections,
   InviteResult,
+  ExistingMemberInvite,
   BatchPreview,
   MigrationRowKind,
   MigrationStatus,
@@ -83,6 +91,10 @@ import type {
   LevyFrequency,
   RendiAiConversationSummary,
   RendiAiConversationDetail,
+  VerificationProfileInput,
+  CommunityRole,
+  RoleInput,
+  RolePermissionVocabulary,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -96,6 +108,17 @@ export const portalApi = {
   markNavigationRead: (communityId: string, section: string) =>
     post<{ read: true }>(path(communityId, `/navigation/${section}/read`)),
   wallet: (communityId: string) => get<WalletData>(path(communityId, '/wallet')),
+
+  /**
+   * The verification profile, from the modal the portal will not let the
+   * owner dismiss. Submitting it is what puts the community in Rendi's review
+   * queue, so there is no separate "send for review" action.
+   */
+  submitVerificationProfile: (communityId: string, body: VerificationProfileInput) =>
+    post<{ id: string; profileSubmittedAt: string }>(
+      path(communityId, '/verification-profile'),
+      body,
+    ),
 
   /** Whether Rendi AI has a model configured in this environment. */
   rendiAiAvailability: (communityId: string) =>
@@ -112,6 +135,23 @@ export const portalApi = {
   auditLogs: (communityId: string, page = 1, limit = 50) =>
     get<AuditEntry[]>(path(communityId, '/audit-logs'), { page, limit }),
 
+  /**
+   * The full activity trail behind the dashboard's "Recent activity" card.
+   * Unlike `auditLogs` it carries actor names, a category and a total, which
+   * is what a page (rather than a glance) needs.
+   */
+  activity: (
+    communityId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      category?: string;
+      search?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ) => get<ActivityFeed>(path(communityId, '/activity'), params),
+
   // ───────────────────────────── Members ─────────────────────────────
 
   members: (communityId: string, search?: string, includeOwner = false) =>
@@ -120,10 +160,54 @@ export const portalApi = {
   member: (communityId: string, memberId: string) =>
     get<MemberDetail>(path(communityId, `/members/${memberId}`)),
 
+  /**
+   * Suspension, as officers do it: pick the services, give the reason.
+   *
+   * The scope list comes from the API rather than being hard-coded here, so
+   * the officer's checkbox wording and the sentence the member is emailed are
+   * the same string.
+   */
+  suspensionScopes: (communityId: string) =>
+    get<SuspensionScopeOption[]>(path(communityId, '/member-suspension-scopes')),
+
+  suspendMember: (
+    communityId: string,
+    memberId: string,
+    body: { scopes: SuspensionScope[]; reason: string },
+  ) => post<MemberSuspension>(path(communityId, `/members/${memberId}/suspension`), body),
+
+  /** Omit `scopes` to restore everything. */
+  liftMemberSuspension: (
+    communityId: string,
+    memberId: string,
+    body: { scopes?: SuspensionScope[]; note?: string } = {},
+  ) =>
+    del<MemberSuspension | null>(path(communityId, `/members/${memberId}/suspension`), body),
+
   addStaff: (
     communityId: string,
     body: { userId?: string; email?: string; roleName: string; title?: string },
   ) => post<{ kind: 'MEMBER' | 'INVITATION' }>(path(communityId, '/staff'), body),
+
+  // ───────────────────────── Roles & posts ─────────────────────────
+
+  roles: (communityId: string) => get<CommunityRole[]>(path(communityId, '/roles')),
+  roleVocabulary: (communityId: string) =>
+    get<RolePermissionVocabulary>(path(communityId, '/roles/vocabulary')),
+  createRole: (communityId: string, body: RoleInput) =>
+    post<CommunityRole>(path(communityId, '/roles'), body),
+  updateRole: (communityId: string, roleId: string, body: Partial<RoleInput>) =>
+    patch<CommunityRole>(path(communityId, `/roles/${roleId}`), body),
+  deleteRole: (communityId: string, roleId: string) =>
+    del<{ deleted: true }>(path(communityId, `/roles/${roleId}`)),
+  /** Hand an elected post over, or add someone to a standing role. */
+  assignRole: (communityId: string, roleId: string, body: { memberId: string; title?: string }) =>
+    post<{ memberId: string; replaced: string | null }>(
+      path(communityId, `/roles/${roleId}/assign`),
+      body,
+    ),
+  standDown: (communityId: string, memberId: string) =>
+    post<{ memberId: string }>(path(communityId, `/members/${memberId}/stand-down`)),
 
   staffInvitations: (communityId: string) =>
     get<StaffInvitation[]>(path(communityId, '/staff/invitations')),
@@ -171,6 +255,13 @@ export const portalApi = {
   reviewAjoJoinRequest: (groupId: string, membershipId: string, approve: boolean) =>
     post<unknown>(`/ajo-groups/${groupId}/join-requests/${membershipId}`, { approve }),
 
+  /** One member's signed agreement, as the PDF both parties hold. */
+  ajoAgreementPdf: (groupId: string, membershipId: string) =>
+    getBlob(
+      `/ajo-groups/${groupId}/agreements/${membershipId}/pdf`,
+      'membership-agreement.pdf',
+    ),
+
   opportunities: (communityId: string) =>
     get<Opportunity[]>(path(communityId, '/opportunities'), { all: '1' }),
   upsertOpportunity: (communityId: string, body: Record<string, unknown>) =>
@@ -182,7 +273,10 @@ export const portalApi = {
     get<WelfareRequestDetail>(`/welfare-requests/${requestId}`),
   reviewWelfare: (
     requestId: string,
-    body: { status: string; note?: string },
+    // `ledgerAccount` is honoured on APPROVED only: which expense line the
+    // grant is charged to belongs to the approval decision, not to whoever
+    // marks it paid afterwards.
+    body: { status: string; note?: string; ledgerAccount?: CoaChoice },
     // Only the PAID step moves money; the API asks for a code just for that.
     extra: MoneyOutExtra = {},
   ) => patch<unknown>(`/welfare-requests/${requestId}`, { ...body, ...extra }),
@@ -212,6 +306,16 @@ export const portalApi = {
     get<{ accounts: BookAccount[]; postingRules: PostingRule[] }>(
       path(communityId, '/accounting/accounts'),
     ),
+
+  /**
+   * What an officer may choose from when creating something that posts.
+   *
+   * Fetched per flow rather than filtering the whole chart in the browser:
+   * the rule that a savings control account must be a liability is enforced
+   * on the server, and a second copy here would be advice, not a guarantee.
+   */
+  coaOptions: (communityId: string, selection: CoaSelectionKey) =>
+    get<CoaOptions>(path(communityId, '/accounting/coa-options'), { selection }),
 
   createAccount: (communityId: string, body: Record<string, unknown>) =>
     post<BookAccount>(path(communityId, '/accounting/accounts'), body),
@@ -777,6 +881,11 @@ export const portalApi = {
    */
   inviteCommunityMembers: (communityId: string, emails: string[]) =>
     post<InviteResult>(path(communityId, '/members/invite'), { identifiers: emails }),
+
+  inviteExistingCommunityMembers: (
+    communityId: string,
+    existingMembers: ExistingMemberInvite[],
+  ) => post<InviteResult>(path(communityId, '/members/invite'), { existingMembers }),
 
   /** Invitations an officer has sent that nobody has answered yet. */
   pendingInvitations: (communityId: string) =>

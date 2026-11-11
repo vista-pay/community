@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Bell,
   CalendarDays,
+  CalendarPlus,
   HandCoins,
   HeartHandshake,
   PiggyBank,
@@ -202,7 +203,25 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
 
         <div className="space-y-6">
           <Card data-rendi-id="dashboard-meeting">
-            <CardHeader title="Next meeting" />
+            {/*
+              Schedule stays on the header in both states. It used to appear
+              only in the empty state, so the moment a community had one
+              meeting on the calendar the way to add the next one disappeared
+              — exactly when an officer needs it most.
+            */}
+            <CardHeader
+              title="Next meeting"
+              action={
+                <LinkButton
+                  size="sm"
+                  variant="secondary"
+                  href="/governance/meetings/new"
+                  icon={<CalendarPlus className="h-3.5 w-3.5" />}
+                >
+                  Schedule
+                </LinkButton>
+              }
+            />
             {d.upcomingMeeting ? (
               <div className="px-5 py-4">
                 <p className="text-sm font-medium text-navy-900">{d.upcomingMeeting.title}</p>
@@ -218,22 +237,36 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
                 </Link>
               </div>
             ) : (
+              /* No action here: the header carries Schedule in both states,
+                 and two Schedule buttons in one small card is clutter. */
               <EmptyState
                 compact
                 icon={<CalendarDays className="h-5 w-5" />}
                 title="Nothing scheduled"
                 body="Schedule your next general meeting or AGM."
-                action={
-                  <LinkButton size="sm" variant="secondary" href="/governance">
-                    Schedule
-                  </LinkButton>
-                }
               />
             )}
           </Card>
 
           <Card>
-            <CardHeader title="Recent activity" />
+            <CardHeader
+              title="Recent activity"
+              subtitle={
+                metrics.activityLast7Days
+                  ? `${metrics.activityLast7Days} in the last 7 days`
+                  : undefined
+              }
+              action={
+                <LinkButton
+                  size="sm"
+                  variant="ghost"
+                  href={'/activity' as Route}
+                  iconRight={<ArrowRight className="h-3.5 w-3.5" />}
+                >
+                  View all
+                </LinkButton>
+              }
+            />
             {d.recentActivity.length === 0 ? (
               <p className="px-5 py-6 text-[13px] text-slate-500">Nothing recorded yet.</p>
             ) : (

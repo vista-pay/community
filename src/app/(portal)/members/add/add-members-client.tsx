@@ -30,9 +30,47 @@ import { useMutation } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
-import type { InviteOutcome, InviteResult } from '@/types';
+import type { ExistingMemberInvite, InviteOutcome, InviteResult } from '@/types';
 
 type Mode = 'single' | 'list' | 'csv';
+type MemberKind = 'new' | 'existing';
+
+type ExistingCsvRow = ExistingMemberInvite & { row: number; error?: string };
+
+const EXISTING_CSV_HEADER = 'full_name,email,phone,date_joined,member_code';
+
+function parseExistingMembersCsv(raw: string): ExistingCsvRow[] {
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0]!.split(',').map((cell) => cell.trim().toLowerCase());
+  const column = (names: string[]) => headers.findIndex((header) => names.includes(header));
+  const indexes = {
+    fullName: column(['full_name', 'name', 'full name']),
+    email: column(['email', 'email_address']),
+    phone: column(['phone', 'phone_number', 'mobile']),
+    dateJoined: column(['date_joined', 'joined_at', 'join_date']),
+    memberCode: column(['member_code', 'code', 'member id']),
+  };
+  if (Object.values(indexes).some((index) => index < 0)) return [];
+
+  return lines.slice(1).map((line, index) => {
+    const cells = line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+    const item: ExistingCsvRow = {
+      row: index + 2,
+      fullName: cells[indexes.fullName] ?? '',
+      email: (cells[indexes.email] ?? '').toLowerCase(),
+      phone: cells[indexes.phone] ?? '',
+      dateJoined: cells[indexes.dateJoined] ?? '',
+      memberCode: cells[indexes.memberCode] ?? '',
+    };
+    if (!item.fullName || !EMAIL.test(item.email) || !item.phone || !item.dateJoined || !item.memberCode) {
+      item.error = 'All five fields are required and the email must be valid.';
+    } else if (new Date(item.dateJoined) > new Date()) {
+      item.error = 'Date joined cannot be in the future.';
+    }
+    return item;
+  });
+}
 
 /** Matches the backend's own validation so obvious typos never leave the page. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -73,13 +111,22 @@ export function AddMembersClient() {
   const communityId = useCommunityId();
   const { toast } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
+  const existingFileInput = useRef<HTMLInputElement>(null);
 
+  const [memberKind, setMemberKind] = useState<MemberKind>('new');
   const [mode, setMode] = useState<Mode>('single');
   const [single, setSingle] = useState('');
   const [bulk, setBulk] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [result, setResult] = useState<InviteResult | null>(null);
+  const [existingMode, setExistingMode] = useState<'single' | 'csv'>('single');
+  const [existing, setExisting] = useState<ExistingMemberInvite>({
+    fullName: '', email: '', phone: '', dateJoined: '', memberCode: '',
+  });
+  const [existingRows, setExistingRows] = useState<ExistingCsvRow[]>([]);
+  const [existingFileName, setExistingFileName] = useState<string | null>(null);
+  const [existingFileError, setExistingFileError] = useState<string | null>(null);
 
   const raw = mode === 'single' ? single : bulk;
   const emails = useMemo(() => parseEmails(raw), [raw]);
@@ -105,6 +152,26 @@ export function AddMembersClient() {
     onError: (message) => toast('Could not send invitations', 'error', message),
   });
 
+  const inviteExisting = useMutation(
+    (members: ExistingMemberInvite[]) => portalApi.inviteExistingCommunityMembers(communityId, members),
+    {
+      onSuccess: (res) => {
+        setResult(res);
+        setExisting({ fullName: '', email: '', phone: '', dateJoined: '', memberCode: '' });
+        setExistingRows([]);
+        setExistingFileName(null);
+        toast(
+          res.invited === 0 ? 'Nothing to send' : `${res.invited} invitation${res.invited === 1 ? '' : 's'} sent`,
+          res.invited === 0 ? 'info' : 'success',
+          res.invited === 0
+            ? 'Check the result below for duplicate members or member codes.'
+            : 'Their historical membership details will be applied when they accept.',
+        );
+      },
+      onError: (message) => toast('Could not import members', 'error', message),
+    },
+  );
+
   async function onFile(file: File) {
     setFileError(null);
     // Read client-side: the API only ever needs the addresses, so the rest of
@@ -120,13 +187,44 @@ export function AddMembersClient() {
     setBulk(found.join('\n'));
   }
 
+  async function onExistingFile(file: File) {
+    setExistingFileError(null);
+    const rows = parseExistingMembersCsv(await file.text());
+    if (!rows.length) {
+      setExistingFileError(`Use these columns: ${EXISTING_CSV_HEADER}`);
+      setExistingFileName(null);
+      setExistingRows([]);
+      return;
+    }
+    setExistingFileName(file.name);
+    setExistingRows(rows);
+  }
+
+  function downloadExistingTemplate() {
+    const csv = `${EXISTING_CSV_HEADER}\nAdaeze Okafor,adaeze@example.com,+2348012345678,2021-03-15,RND-0001`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'existing-members-template.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   const canSend = emails.length > 0 && !tooMany && !invite.pending;
+  const existingSingleValid =
+    existing.fullName.trim().length > 0 && EMAIL.test(existing.email.trim()) &&
+    existing.phone.trim().length > 0 && existing.dateJoined.length > 0 &&
+    existing.memberCode.trim().length > 0 && new Date(existing.dateJoined) <= new Date();
+  const validExistingRows = existingRows.filter((row) => !row.error);
+  const canSendExisting = existingMode === 'single'
+    ? existingSingleValid && !inviteExisting.pending
+    : validExistingRows.length > 0 && existingRows.length <= MAX_BULK && !inviteExisting.pending;
 
   return (
     <>
       <PageHeader
-        title="Add new member"
-        subtitle="Invite by email — nobody is added until they accept"
+        title="Add members"
+        subtitle="Invite a new member or bring your existing register into Rendi"
         breadcrumb={
           <Link href={'/members' as Route} className="hover:text-navy-700">
             Members
@@ -146,12 +244,32 @@ export function AddMembersClient() {
         once they have registered.
       </Callout>
 
+      <Card className="p-4">
+        <Segmented<MemberKind>
+          label="Member type"
+          value={memberKind}
+          onChange={(next) => {
+            setMemberKind(next);
+            setResult(null);
+          }}
+          options={[
+            { value: 'new', label: 'New member' },
+            { value: 'existing', label: 'Existing member' },
+          ]}
+        />
+        <p className="mt-2 text-[13px] text-slate-600">
+          {memberKind === 'new'
+            ? 'Invite someone who is joining this community now.'
+            : 'Bring a member from your existing register into Rendi without losing their original details.'}
+        </p>
+      </Card>
+
       <Card>
         <CardHeader
-          title="Who are you inviting?"
-          subtitle="One person, a pasted list, or a CSV export"
+          title={memberKind === 'new' ? 'Who are you inviting?' : 'Add existing members'}
+          subtitle={memberKind === 'new' ? 'One person, a pasted list, or a CSV export' : 'One person or a complete CSV register'}
           action={
-            <Segmented<Mode>
+            memberKind === 'new' ? <Segmented<Mode>
               label="How to add"
               size="sm"
               value={mode}
@@ -164,11 +282,24 @@ export function AddMembersClient() {
                 { value: 'list', label: 'Paste a list' },
                 { value: 'csv', label: 'CSV file' },
               ]}
+            /> : <Segmented<'single' | 'csv'>
+              label="How to add"
+              size="sm"
+              value={existingMode}
+              onChange={(next) => {
+                setExistingMode(next);
+                setExistingFileError(null);
+              }}
+              options={[
+                { value: 'single', label: 'One person' },
+                { value: 'csv', label: 'CSV file' },
+              ]}
             />
           }
         />
 
         <div className="space-y-4 p-5">
+          {memberKind === 'new' ? <>
           {mode === 'single' && (
             <Field
               label="Email address"
@@ -293,6 +424,74 @@ export function AddMembersClient() {
               Invitations expire after 30 days.
             </p>
           </div>
+          </> : <>
+            {existingMode === 'single' ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" htmlFor="existing-full-name" required>
+                  <Input id="existing-full-name" autoComplete="name" placeholder="Adaeze Okafor" value={existing.fullName} onChange={(event) => setExisting((value) => ({ ...value, fullName: event.target.value }))} />
+                </Field>
+                <Field label="Email address" htmlFor="existing-email" required hint="The invitation is sent here immediately.">
+                  <Input id="existing-email" type="email" autoComplete="email" placeholder="adaeze@example.com" value={existing.email} onChange={(event) => setExisting((value) => ({ ...value, email: event.target.value }))} />
+                </Field>
+                <Field label="Phone number" htmlFor="existing-phone" required>
+                  <Input id="existing-phone" type="tel" autoComplete="tel" placeholder="+234 801 234 5678" value={existing.phone} onChange={(event) => setExisting((value) => ({ ...value, phone: event.target.value }))} />
+                </Field>
+                <Field label="Date joined" htmlFor="existing-date-joined" required hint="Their original date in your register.">
+                  <Input id="existing-date-joined" type="date" max={new Date().toISOString().slice(0, 10)} value={existing.dateJoined} onChange={(event) => setExisting((value) => ({ ...value, dateJoined: event.target.value }))} />
+                </Field>
+                <Field label="Member code" htmlFor="existing-member-code" required hint="Must be unique in this community." className="sm:col-span-2">
+                  <Input id="existing-member-code" placeholder="RND-0001" value={existing.memberCode} onChange={(event) => setExisting((value) => ({ ...value, memberCode: event.target.value }))} />
+                </Field>
+              </div>
+            ) : (
+              <>
+                <Field label="Existing members CSV" required error={existingFileError} hint={`Required columns: ${EXISTING_CSV_HEADER}`}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input ref={existingFileInput} type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void onExistingFile(file);
+                      event.target.value = '';
+                    }} />
+                    <Button variant="secondary" icon={<FileUp className="h-4 w-4" />} onClick={() => existingFileInput.current?.click()}>Choose CSV file</Button>
+                    <Button variant="ghost" onClick={downloadExistingTemplate}>Download template</Button>
+                    {existingFileName && <span className="text-[13px] text-slate-600">{existingFileName}</span>}
+                  </div>
+                </Field>
+                {existingRows.length > 0 && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <p className="text-[12.5px] font-medium text-navy-900">
+                      {validExistingRows.length} of {existingRows.length} rows ready
+                    </p>
+                    {existingRows.some((row) => row.error) && (
+                      <ul className="mt-2 space-y-1 text-[12px] text-red-600">
+                        {existingRows.filter((row) => row.error).slice(0, 10).map((row) => <li key={row.row}>Row {row.row}: {row.error}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {inviteExisting.error && <Callout tone="danger" title="Could not send">{inviteExisting.error}</Callout>}
+
+            <div className="flex items-center gap-3 border-t border-slate-200 pt-4">
+              <Button
+                icon={<Mail className="h-4 w-4" />}
+                loading={inviteExisting.pending}
+                disabled={!canSendExisting}
+                onClick={() => inviteExisting.run(existingMode === 'single' ? [existing] : validExistingRows.map((row) => ({
+                  fullName: row.fullName,
+                  email: row.email,
+                  phone: row.phone,
+                  dateJoined: row.dateJoined,
+                  memberCode: row.memberCode,
+                })))}
+              >
+                {existingMode === 'csv' && validExistingRows.length > 1 ? `Send ${validExistingRows.length} invitations` : 'Send invitation'}
+              </Button>
+              <p className="text-[12.5px] text-slate-500">Their details are applied after they accept.</p>
+            </div>
+          </>}
         </div>
       </Card>
 

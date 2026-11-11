@@ -24,11 +24,13 @@ import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId, useSession } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
-import { ASSIGNABLE_ROLES, roleName } from '@/data/catalog';
+import { roleName } from '@/data/catalog';
+import { isFounderRole, isOfficerRole, isPlainMember } from '@/lib/roles';
 import { date, humanise, relative } from '@/lib/format';
 import type { AuditEntry, MemberRow, StaffInvitation } from '@/types';
+import { RolesPanel } from './roles-panel';
 
-type Tab = 'staff' | 'audit';
+type Tab = 'staff' | 'roles' | 'audit';
 
 export function StaffClient({
   members: initialMembers,
@@ -55,7 +57,7 @@ export function StaffClient({
   );
 
   const staff = (members.data ?? []).filter(
-    (m) => m.role !== 'COMMUNITY_MEMBER' && m.status === 'ACTIVE',
+    (m) => isOfficerRole(m.role) && m.status === 'ACTIVE',
   );
 
   const remove = useMutation((memberId: string) => portalApi.removeStaff(communityId, memberId), {
@@ -93,11 +95,14 @@ export function StaffClient({
         className="mb-4"
         tabs={[
           { value: 'staff', label: 'Officers', count: staff.length },
+          { value: 'roles', label: 'Posts & roles' },
           { value: 'audit', label: 'Audit log' },
         ]}
       />
 
-      {tab === 'staff' ? (
+      {tab === 'roles' ? (
+        <RolesPanel members={members.data ?? []} />
+      ) : tab === 'staff' ? (
         <div className="space-y-4">
           {(invitations.data?.length ?? 0) > 0 && (
             <Card>
@@ -186,7 +191,7 @@ export function StaffClient({
                 header: '',
                 align: 'right',
                 cell: (m) =>
-                  m.role === 'COMMUNITY_OWNER' ? (
+                  isFounderRole(m.role) ? (
                     <span className="text-xs text-slate-400">Owner</span>
                   ) : m.email === user.email ? (
                     <span className="text-xs text-slate-400">You</span>
@@ -291,8 +296,16 @@ export function AddStaffModal({
   onInvited: () => Promise<void>;
 }) {
   const { toast } = useToast();
+  // The community's own posts, not a constant: the list used to be hardcoded
+  // and had drifted, so three of its six options named roles that did not
+  // exist and failed on save.
+  const roles = useQuery(() => portalApi.roles(communityId), [communityId]);
+  const assignable = (roles.data ?? []).filter(
+    (r) => !isPlainMember(r.name) && !isFounderRole(r.name),
+  );
   const [email, setEmail] = useState('');
-  const [roleName_, setRoleName] = useState<string>('COMMUNITY_TREASURER');
+  const [picked, setPicked] = useState('');
+  const roleName_ = picked || assignable[0]?.name || '';
   const [title, setTitle] = useState('');
 
   const add = useMutation(
@@ -335,7 +348,7 @@ export function AddStaffModal({
             Cancel
           </Button>
           <Button
-            disabled={!email.includes('@')}
+            disabled={!email.includes('@') || !roleName_}
             loading={add.pending}
             onClick={() => void add.run()}
           >
@@ -376,17 +389,23 @@ export function AddStaffModal({
         <div>
           <p className="label">Role</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {ASSIGNABLE_ROLES.map((r) => (
+            {assignable.map((r) => (
               <RadioCard
-                key={r.value}
-                selected={roleName_ === r.value}
-                onSelect={() => setRoleName(r.value)}
+                key={r.id}
+                selected={roleName_ === r.name}
+                onSelect={() => setPicked(r.name)}
                 title={r.label}
-                description={r.description}
+                description={r.description ?? undefined}
+                badge={r.isElected ? <Badge tone="blue">Elected</Badge> : undefined}
                 icon={<ShieldCheck className="h-4 w-4" />}
               />
             ))}
           </div>
+          {!roles.loading && assignable.length === 0 && (
+            <p className="mt-2 text-[13px] text-slate-500">
+              No assignable posts yet — create one on the Posts &amp; roles tab.
+            </p>
+          )}
         </div>
       </div>
     </Modal>

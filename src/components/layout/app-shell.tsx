@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import {
+  Activity,
   BarChart3,
   BookOpen,
   Building2,
@@ -61,6 +62,7 @@ import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
 import { RendiAiTrigger } from '@/components/rendi-ai/rendi-ai-trigger';
+import { VerificationProfileModal } from '@/components/onboarding/verification-profile-modal';
 
 type NavigationCounts = NonNullable<DashboardData['navigationCounts']>;
 type NavCountKey = keyof NavigationCounts;
@@ -83,6 +85,10 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     group: 'Overview',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, countKey: 'dashboard' },
+      // Reachable from the dashboard's "View all", but it is also the page an
+      // officer goes looking for by name when something changed and nobody
+      // remembers who changed it.
+      { href: '/activity' as Route, label: 'Activity', icon: Activity, countKey: 'dashboard' },
     ],
   },
   {
@@ -294,9 +300,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mustSetUpListing =
     Boolean(community?.listingSetupRequired) && !pathname.startsWith('/listing');
 
+  // Registration is not finished until the verification profile is in, and
+  // this one has nowhere to send the owner — the form *is* the destination,
+  // so it renders inline rather than offering a link. It takes precedence
+  // over the listing mandate, which only applies once verified anyway.
+  const mustCompleteProfile = Boolean(community?.verificationProfileRequired);
+
   return (
     <div className="min-h-dvh bg-[#F5F7FB]">
-      {mustSetUpListing && (
+      {mustCompleteProfile && community && (
+        <VerificationProfileModal communityId={community.id} communityName={community.name} />
+      )}
+      {mustSetUpListing && !mustCompleteProfile && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-navy-900/60 p-4 backdrop-blur-sm"
           role="alertdialog"

@@ -28,7 +28,12 @@ import {
 import { date, humanise, money } from '@/lib/format';
 import { sumMoney } from '@/lib/money';
 import { downloadCsv } from '@/lib/csv';
+import { useQuery } from '@/hooks/use-query';
+import { useCommunityId } from '@/components/providers/session-provider';
+import { portalApi } from '@/services/portal';
+import { SuspendMember, SuspensionNotice, useSuspensionScopes } from './suspend-member';
 import type { MemberDetail } from '@/types';
+import { isOfficerRole } from '@/lib/roles';
 
 type Tab = 'overview' | 'savings' | 'ajo' | 'loans' | 'conduct';
 
@@ -42,8 +47,22 @@ function isSavingsDebit(type: string) {
   return type === 'WITHDRAWAL';
 }
 
-export function MemberProfile({ member }: { member: MemberDetail }) {
+export function MemberProfile({ member: initial }: { member: MemberDetail }) {
   const [tab, setTab] = useState<Tab>('overview');
+  const communityId = useCommunityId();
+
+  // Refetched on the client so suspending or lifting updates the header, the
+  // notice and the status badge together, without a full page reload.
+  const { data, refresh } = useQuery<MemberDetail>(
+    () => portalApi.member(communityId, initial.id),
+    [communityId, initial.id],
+    { initial },
+  );
+  const member = data ?? initial;
+  const scopeOptions = useSuspensionScopes();
+  // Both names, via the shared predicate: the role catalogue renamed
+  // MEMBER, and communities seeded before that still carry the old one.
+  const isStaff = isOfficerRole(member.role);
 
   const savingsTotal = sumMoney(member.savingsAccounts.map((a) => a.balance));
   const loanOutstanding = sumMoney(
@@ -76,11 +95,34 @@ export function MemberProfile({ member }: { member: MemberDetail }) {
               <span className="ml-3 align-middle">
                 <StatusBadge status={member.status.toLowerCase()} />
               </span>
+              {member.suspension && (
+                <span className="ml-2 align-middle">
+                  <Badge tone="red" dot>
+                    {member.suspension.isFull ? 'Fully suspended' : 'Partly suspended'}
+                  </Badge>
+                </span>
+              )}
             </span>
           </span>
         }
         subtitle={`${member.title ?? humanise(member.role.replace('COMMUNITY_', ''))} · joined ${date(member.joinedAt, 'long')}`}
+        actions={
+          <SuspendMember
+            memberId={member.id}
+            memberName={member.name}
+            suspension={member.suspension}
+            isStaff={isStaff}
+            options={scopeOptions}
+            onChanged={refresh}
+          />
+        }
       />
+
+      {member.suspension && (
+        <div className="mb-4">
+          <SuspensionNotice suspension={member.suspension} options={scopeOptions} />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Savings" value={money(savingsTotal)} icon={<PiggyBank className="h-4 w-4" />} />

@@ -2,6 +2,7 @@ import 'server-only';
 import { redirect } from 'next/navigation';
 import { apiServer, apiServerSafe, isKycRequired } from '@/lib/server-api';
 import { getActiveCommunityId } from '@/lib/session';
+import { isOfficerRole } from '@/lib/roles';
 import type { CommunitySummary, PortalSession, PortalUser } from '@/types';
 
 /**
@@ -22,15 +23,20 @@ interface RawCommunity {
   status: CommunitySummary['status'];
   memberCount: number;
   listingSetupRequired: boolean;
+  verificationProfileRequired: boolean;
 }
 
 /**
- * The portal is for officers. A plain member has a role of COMMUNITY_MEMBER
- * and no write permission, so they would meet a wall of 403s — better to
- * treat them as having no workspace at all and say so once.
+ * The portal is for officers. A plain member holds no write permission, so
+ * they would meet a wall of 403s — better to treat them as having no
+ * workspace at all and say so once.
+ *
+ * Via the shared predicate rather than a literal: this comparison decides who
+ * is let into the portal, and it had already been missed once by a role
+ * rename, which silently started admitting plain members.
  */
 const isOfficer = (c: RawCommunity) =>
-  c.membershipStatus === 'ACTIVE' && c.role !== 'COMMUNITY_MEMBER';
+  c.membershipStatus === 'ACTIVE' && isOfficerRole(c.role);
 
 export async function loadSession(): Promise<PortalSession | null> {
   const [user, communities, activeId] = await Promise.all([

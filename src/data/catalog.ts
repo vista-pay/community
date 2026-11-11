@@ -1,12 +1,31 @@
 /**
  * Static reference data: the vocabulary the portal shows, not records.
  *
- * Role names here mirror the Role rows the API creates (COMMUNITY_OWNER and
- * friends); the label is what an officer should read on screen.
+ * A fallback only. Roles are per community now and carry their own `label`,
+ * which a community may rename — so anywhere the full role object is to hand,
+ * read `role.label` instead of looking a name up here. This map exists for
+ * the places that have only a name (a member row, a staff invitation) and
+ * still need to print something sensible.
+ *
+ * Both spellings are listed: migration 20261111150000 dropped the
+ * `COMMUNITY_` prefix, and a payload minted before it can still be in a
+ * cookie.
  */
 
 export const ROLE_LABELS: Record<string, string> = {
-  COMMUNITY_OWNER: 'Owner',
+  REGISTRAR: 'Registrar',
+  PRESIDENT: 'President',
+  VICE_PRESIDENT: 'Vice President',
+  SECRETARY: 'Secretary',
+  FINANCIAL_SECRETARY: 'Financial Secretary',
+  TREASURER: 'Treasurer',
+  AUDITOR: 'Auditor',
+  LOAN_OFFICER: 'Loan officer',
+  MERCHANT_MANAGER: 'Merchant manager',
+  MEMBER: 'Member',
+
+  // Pre-rename spellings.
+  COMMUNITY_OWNER: 'Registrar',
   COMMUNITY_ADMIN: 'Administrator',
   COMMUNITY_TREASURER: 'Treasurer',
   COMMUNITY_SECRETARY: 'Secretary',
@@ -17,21 +36,17 @@ export const ROLE_LABELS: Record<string, string> = {
 
 export const roleName = (role: string) =>
   ROLE_LABELS[role] ??
-  role.replace(/^COMMUNITY_/, '').replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+  // A community's own invented post: CUSTOM_WELFARE_OFFICER -> Welfare officer.
+  role
+    .replace(/^(COMMUNITY|CUSTOM)_/, '')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/^./, (c) => c.toUpperCase());
 
-/** Roles an owner can assign from the Staff screen. */
-export const ASSIGNABLE_ROLES = [
-  { value: 'COMMUNITY_ADMIN', label: 'Administrator', description: 'Everything except billing and ownership' },
-  { value: 'COMMUNITY_TREASURER', label: 'Treasurer', description: 'Books, expenses, savings and reconciliation' },
-  { value: 'COMMUNITY_SECRETARY', label: 'Secretary', description: 'Members, meetings, minutes and communications' },
-  { value: 'COMMUNITY_LOAN_OFFICER', label: 'Loan officer', description: 'Loan applications and products' },
-  { value: 'COMMUNITY_AUDITOR', label: 'Auditor', description: 'Read-only across the books and records' },
-  {
-    value: 'COMMUNITY_MERCHANT_MANAGER',
-    label: 'Merchant manager',
-    description: 'Payment links, invoices, settlement accounts and integrations',
-  },
-] as const;
+// ASSIGNABLE_ROLES used to live here. Roles are now per community and read
+// from GET /communities/:id/roles — a hardcoded list cannot name a post a
+// community invented, and this one had already drifted into offering three
+// roles the API did not have.
 
 export const ORG_CATEGORIES = [
   'Cooperative society',
