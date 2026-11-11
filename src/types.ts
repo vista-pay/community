@@ -147,12 +147,28 @@ export interface WalletTransaction {
   currencyCode: string;
   counterparty: string | null;
   narration: string | null;
+  coaAccount: { id: string; code: string; name: string; type: BookAccountType } | null;
+  coaLocked: boolean;
   createdAt: IsoDate;
 }
 
 export interface WalletData {
   wallet: CommunityWallet | null;
   transactions: WalletTransaction[];
+  /**
+   * Money held for members in Ajo pots. Each contribution group banks into
+   * its own pool wallet, so none of this is in the balance above — it is
+   * reported alongside it so the wallet and the books stop looking like they
+   * disagree.
+   */
+  ajoPots?: AjoPots;
+}
+
+export interface AjoPots {
+  /** Across every group with a balance. Not spendable by the community. */
+  total: Money;
+  count: number;
+  groups: Array<{ id: string; name: string; balance: Money; currencyCode: string }>;
 }
 
 export interface DashboardData {
@@ -230,6 +246,8 @@ export interface DashboardData {
     merchantWebhooks: number;
     configuration: number;
   };
+  /** Money held for members in contribution pots — see AjoPots. */
+  ajoPots?: AjoPots;
   upcomingMeeting: { id: string; title: string; scheduledFor: IsoDate; venue: string } | null;
   subscription: { id: string; plan: string; status: string; renewsAt: IsoDate | null } | null;
   recentActivity: Array<{
@@ -1192,7 +1210,9 @@ export type CoaSelectionKey =
   | 'SAVINGS_PRODUCT'
   | 'CONTRIBUTION_GROUP'
   | 'LOAN_PRODUCT'
-  | 'WELFARE_GRANT';
+  | 'WELFARE_GRANT'
+  | 'MERCHANT_MONEY_IN'
+  | 'MERCHANT_MONEY_OUT';
 
 /** What the officer is choosing, in the API's own words. */
 export interface CoaSelectionSpec {
@@ -1508,6 +1528,7 @@ export interface MerchantPaymentLink {
   expiresAt: string | null;
   createdAt: string;
   shareableUrl: string;
+  coaAccount: { id: string; code: string; name: string; type: BookAccountType } | null;
 }
 
 export interface MerchantInvoiceItem {
@@ -1531,6 +1552,7 @@ export interface MerchantInvoice {
   createdAt: string;
   paidAt: string | null;
   items: MerchantInvoiceItem[];
+  coaAccount: { id: string; code: string; name: string; type: BookAccountType } | null;
 }
 
 export interface MerchantInvoiceDetail extends MerchantInvoice {

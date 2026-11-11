@@ -34,6 +34,7 @@ export function InvoicesClient({ initial }: { initial: MerchantInvoice[] }) {
           <DataTable rows={invoices} rowKey={(i) => i.id} columns={[
             { key: 'number', header: 'Invoice', cell: (i) => <Link href={`/merchant/invoices/${i.id}` as Route} className="font-medium text-brand-700 hover:underline">{i.invoiceNumber}</Link> },
             { key: 'customer', header: 'Customer', cell: (i) => <div><p>{i.customerName}</p><p className="text-xs text-slate-500">{i.customerEmail}</p></div> },
+            { key: 'coa', header: 'Chart of account', hideOnMobile: true, cell: (i) => i.coaAccount ? <span className="text-[12.5px] text-slate-600"><span className="font-mono">{i.coaAccount.code}</span> · {i.coaAccount.name}</span> : '—' },
             { key: 'issued', header: 'Issued', cell: (i) => date(i.issueDate) },
             { key: 'due', header: 'Due', cell: (i) => date(i.dueDate) },
             { key: 'total', header: 'Total', align: 'right', cell: (i) => money(i.totalAmount, i.currencyCode) },

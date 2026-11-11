@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   BadgeCheck,
+  BookOpen,
   Check,
   Copy,
   FileText,
@@ -11,14 +14,19 @@ import {
   Link2,
 } from 'lucide-react';
 import {
+  Button,
   Callout,
+  Card,
+  CardHeader,
+  EmptyState,
   PageHeader,
   Stat,
 } from '@/components/ui';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import type { MerchantOverview } from '@/types';
+import { date, humanise, money } from '@/lib/format';
+import type { MerchantOverview, WalletData } from '@/types';
 
 export function MerchantClient({ initial }: { initial: MerchantOverview }) {
   const communityId = useCommunityId();
@@ -26,6 +34,10 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
     () => portalApi.merchantOverview(communityId),
     [communityId],
     { initial },
+  );
+  const { data: walletData, loading: walletLoading, error: walletError } = useQuery<WalletData>(
+    () => portalApi.wallet(communityId),
+    [communityId],
   );
 
   const d = data ?? initial;
@@ -172,6 +184,77 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
         />
         */}
       </div>
+
+      <Card className="mb-6" id="merchant-wallet-coa">
+        <CardHeader
+          title="Merchant wallet & chart of accounts"
+          subtitle="See where every payment received or sent belongs in your books"
+          action={
+            <Link href="/wallet#transactions">
+              <Button size="sm" icon={<BookOpen className="h-4 w-4" />}>
+                Manage wallet COA
+              </Button>
+            </Link>
+          }
+        />
+
+        {walletError ? (
+          <div className="p-5">
+            <Callout tone="warning" title="Wallet transactions are unavailable">
+              {walletError}
+            </Callout>
+          </div>
+        ) : walletLoading && !walletData ? (
+          <div className="p-5 text-sm text-slate-500">Loading merchant wallet transactions…</div>
+        ) : !walletData?.transactions.length ? (
+          <EmptyState
+            compact
+            title="No wallet movements yet"
+            body="Payments received through the collection account, payment links, or invoices will appear here."
+          />
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {walletData.transactions.slice(0, 5).map((transaction) => (
+              <div key={transaction.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${transaction.credit ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>
+                  {transaction.credit ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="text-[13px] font-semibold text-navy-900">{humanise(transaction.type)}</p>
+                    <span className="text-xs text-slate-400">{date(transaction.createdAt)}</span>
+                  </div>
+                  <p className="mt-0.5 truncate font-mono text-[11.5px] text-slate-500">{transaction.reference}</p>
+                  {transaction.coaAccount ? (
+                    <p className="mt-1 text-[12.5px] text-slate-600">
+                      COA <span className="font-mono font-semibold text-navy-800">{transaction.coaAccount.code}</span> · {transaction.coaAccount.name}
+                    </p>
+                  ) : transaction.status === 'SUCCESS' ? (
+                    <Link href="/wallet#transactions" className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-semibold text-amber-700 hover:underline">
+                      <BookOpen className="h-3.5 w-3.5" /> COA not assigned — assign now
+                    </Link>
+                  ) : (
+                    <p className="mt-1 text-[12px] text-slate-400">COA available after completion</p>
+                  )}
+                </div>
+                <div className="sm:text-right">
+                  <p className={`tnum text-sm font-bold ${transaction.credit ? 'text-emerald-600' : 'text-navy-900'}`}>
+                    {transaction.credit ? '+' : '−'}{money(transaction.amount, transaction.currencyCode)}
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] text-slate-500">{humanise(transaction.status)}</p>
+                </div>
+              </div>
+            ))}
+            {walletData.transactions.length > 5 && (
+              <div className="px-5 py-3 text-center">
+                <Link href="/wallet#transactions" className="text-[13px] font-semibold text-brand-700 hover:underline">
+                  View all {walletData.transactions.length} wallet transactions
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* Settlement accounts — intentionally not rendered yet.
 

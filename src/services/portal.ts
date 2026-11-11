@@ -108,6 +108,14 @@ export const portalApi = {
   markNavigationRead: (communityId: string, section: string) =>
     post<{ read: true }>(path(communityId, `/navigation/${section}/read`)),
   wallet: (communityId: string) => get<WalletData>(path(communityId, '/wallet')),
+  assignWalletTransactionAccount: (
+    communityId: string,
+    transactionId: string,
+    choice: CoaChoice,
+  ) => patch<{ transactionId: string; account: BookAccount }>(
+    path(communityId, `/wallet/transactions/${transactionId}/account`),
+    { choice },
+  ),
 
   /**
    * The verification profile, from the modal the portal will not let the
@@ -736,6 +744,7 @@ export const portalApi = {
       currencyCode: string;
       isFixedAmount?: boolean;
       maxUses?: number;
+      coaChoice?: CoaChoice;
     },
   ) => post<MerchantPaymentLink>(path(communityId, '/merchant/payment-links'), body),
 
@@ -760,6 +769,7 @@ export const portalApi = {
       issueDate?: string;
       dueDate: string;
       items: Array<{ description: string; quantity: number; unitPrice: string }>;
+      coaChoice?: CoaChoice;
     },
   ) => post<MerchantInvoice>(path(communityId, '/merchant/invoices'), body),
 
@@ -773,6 +783,7 @@ export const portalApi = {
       issueDate?: string;
       dueDate: string;
       items: Array<{ description: string; quantity: number; unitPrice: string }>;
+      coaChoice?: CoaChoice;
     },
   ) => patch<MerchantInvoice>(path(communityId, `/merchant/invoices/${invoiceId}`), body),
 

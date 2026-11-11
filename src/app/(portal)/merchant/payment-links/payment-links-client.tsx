@@ -23,7 +23,8 @@ import { useToast } from '@/components/providers/toast-provider';
 import { useMutation, useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
 import { date, money } from '@/lib/format';
-import type { MerchantPaymentLink } from '@/types';
+import type { CoaChoice, MerchantPaymentLink } from '@/types';
+import { AccountSelector, coaChoicePayload, isCoaChoiceComplete, SYSTEM_COA_CHOICE } from '@/components/accounting/account-selector';
 
 export function PaymentLinksClient({ initial }: { initial: MerchantPaymentLink[] }) {
   const communityId = useCommunityId();
@@ -106,6 +107,11 @@ export function PaymentLinksClient({ initial }: { initial: MerchantPaymentLink[]
                     {l.description && (
                       <p className="truncate text-xs text-slate-500">{l.description}</p>
                     )}
+                    {l.coaAccount && (
+                      <p className="mt-0.5 truncate text-[11.5px] text-slate-500 md:hidden">
+                        COA <span className="font-mono">{l.coaAccount.code}</span> · {l.coaAccount.name}
+                      </p>
+                    )}
                   </div>
                 ),
               },
@@ -119,6 +125,12 @@ export function PaymentLinksClient({ initial }: { initial: MerchantPaymentLink[]
                   ) : (
                     <span className="text-slate-500">Payer chooses</span>
                   ),
+              },
+              {
+                key: 'coa',
+                header: 'Chart of account',
+                hideOnMobile: true,
+                cell: (l) => l.coaAccount ? <span className="text-[12.5px] text-slate-600"><span className="font-mono">{l.coaAccount.code}</span> · {l.coaAccount.name}</span> : '—',
               },
               {
                 key: 'uses',
@@ -239,6 +251,7 @@ function CreateLinkModal({
   const [amount, setAmount] = useState('');
   const [fixed, setFixed] = useState(true);
   const [maxUses, setMaxUses] = useState('');
+  const [coaChoice, setCoaChoice] = useState<CoaChoice>(SYSTEM_COA_CHOICE);
 
   const create = useMutation(
     () =>
@@ -251,6 +264,7 @@ function CreateLinkModal({
         currencyCode: 'NGN',
         isFixedAmount: fixed,
         maxUses: maxUses ? Number(maxUses) : undefined,
+        coaChoice: coaChoicePayload(coaChoice),
       }),
     {
       onSuccess: async (link) => {
@@ -260,6 +274,7 @@ function CreateLinkModal({
         setDescription('');
         setAmount('');
         setMaxUses('');
+        setCoaChoice(SYSTEM_COA_CHOICE);
         await onCreated(link);
       },
       onError: (message) => toast('Could not create link', 'error', message),
@@ -267,7 +282,7 @@ function CreateLinkModal({
   );
 
   const amountValid = !fixed || /^\d+(\.\d{1,2})?$/.test(amount);
-  const complete = title.trim().length >= 2 && amountValid && (!fixed || amount);
+  const complete = title.trim().length >= 2 && amountValid && (!fixed || amount) && isCoaChoiceComplete(coaChoice);
 
   return (
     <Modal
@@ -335,6 +350,12 @@ function CreateLinkModal({
             placeholder="Unlimited"
           />
         </Field>
+        <AccountSelector
+          selection="MERCHANT_MONEY_IN"
+          value={coaChoice}
+          onChange={setCoaChoice}
+          idPrefix="payment-link-coa"
+        />
       </div>
     </Modal>
   );

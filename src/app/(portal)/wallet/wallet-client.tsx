@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownLeft, ArrowUpRight, Check, Copy, Download, Landmark, ReceiptText, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BookOpen, Check, Copy, Download, Landmark, PiggyBank, ReceiptText, Wallet } from 'lucide-react';
 import {
   Button,
   Card,
@@ -10,18 +10,22 @@ import {
   DataTable,
   EmptyState,
   Input,
+  Modal,
   PageHeader,
   Select,
   Stat,
   StatusBadge,
 } from '@/components/ui';
 import { useQuery } from '@/hooks/use-query';
+import { useMutation } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
+import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { date, humanise, money } from '@/lib/format';
 import { isZeroMoney } from '@/lib/money';
 import { downloadCsv } from '@/lib/csv';
-import type { WalletData, WalletTransaction } from '@/types';
+import type { CoaChoice, WalletData, WalletTransaction } from '@/types';
+import { AccountSelector, isCoaChoiceComplete, SYSTEM_COA_CHOICE } from '@/components/accounting/account-selector';
 
 const TYPE_LABELS: Record<string, string> = {
   DEPOSIT: 'Bank deposit',
@@ -41,21 +45,37 @@ function typeLabel(t: WalletTransaction) {
 
 export function WalletClient({ initial }: { initial: WalletData }) {
   const communityId = useCommunityId();
-  const { data } = useQuery<WalletData>(() => portalApi.wallet(communityId), [communityId], {
+  const { toast } = useToast();
+  const { data, refresh } = useQuery<WalletData>(() => portalApi.wallet(communityId), [communityId], {
     initial,
   });
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState('');
   const [direction, setDirection] = useState<'all' | 'in' | 'out'>('all');
   const [status, setStatus] = useState('all');
+  const [classifying, setClassifying] = useState<WalletTransaction | null>(null);
+  const [coaChoice, setCoaChoice] = useState<CoaChoice>(SYSTEM_COA_CHOICE);
+  const assignAccount = useMutation(
+    () => portalApi.assignWalletTransactionAccount(communityId, classifying!.id, coaChoice),
+    {
+      onSuccess: async () => {
+        toast('Account assigned', 'success', 'The wallet movement is now posted in the community books.');
+        setClassifying(null);
+        setCoaChoice(SYSTEM_COA_CHOICE);
+        await refresh();
+      },
+      onError: (message) => toast('Could not assign account', 'error', message),
+    },
+  );
 
   const d = data ?? initial;
   const ngn = d.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ?? d.wallet?.accounts[0];
   const depositAccount = d.wallet?.depositAccount ?? null;
+  const pots = d.ajoPots;
   const transactions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return d.transactions.filter((transaction) => {
-      const haystack = `${typeLabel(transaction)} ${transaction.reference} ${transaction.counterparty ?? ''} ${transaction.narration ?? ''}`.toLowerCase();
+      const haystack = `${typeLabel(transaction)} ${transaction.reference} ${transaction.counterparty ?? ''} ${transaction.narration ?? ''} ${transaction.coaAccount?.code ?? ''} ${transaction.coaAccount?.name ?? ''}`.toLowerCase();
       return (
         (!needle || haystack.includes(needle)) &&
         (direction === 'all' || (direction === 'in' ? transaction.credit : !transaction.credit)) &&
@@ -130,7 +150,7 @@ export function WalletClient({ initial }: { initial: WalletData }) {
       </div>
 
       {/* Balances */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Available"
           value={ngn ? money(ngn.available, ngn.currencyCode) : '—'}
@@ -149,10 +169,62 @@ export function WalletClient({ initial }: { initial: WalletData }) {
           hint={ngn && !isZeroMoney(ngn.held) ? 'Reserved against payouts in flight' : 'Nothing reserved'}
           icon={<ArrowUpRight className="h-4 w-4" />}
         />
+        {/* Deliberately its own card rather than folded into Available or
+            Held. Available would say the community can spend money that
+            belongs to whoever the rotation pays next; Held means reserved
+            *within this wallet*, and these pots are separate wallets. */}
+        <Stat
+          label="Contribution pots"
+          value={money(pots?.total ?? '0', ngn?.currencyCode ?? 'NGN')}
+          hint={
+            pots && pots.count > 0
+              ? `Held for members in ${pots.count} pot${pots.count === 1 ? '' : 's'} — not spendable here`
+              : 'No contribution pots open'
+          }
+          icon={<PiggyBank className="h-4 w-4" />}
+        />
       </div>
 
+      {/* Held for members, in each group's own pool wallet rather than this
+          one — so it is reported next to the balance, never inside it. Its
+          absence here is what made the wallet and the books read as if they
+          disagreed. */}
+      {pots && pots.count > 0 && (
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+              <PiggyBank className="h-4 w-4" aria-hidden />
+            </span>
+            <div className="min-w-[220px] flex-1">
+              <p className="text-sm font-medium text-navy-900">
+                Where the {money(pots.total, ngn?.currencyCode ?? 'NGN')} in pots is sitting
+              </p>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+                Each contribution group banks into its own pool, not this wallet. Your books count
+                it as an asset against a matching liability, which is why Accounting reads higher
+                than Available.
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {pots.groups.map((g) => (
+                  <li key={g.id} className="text-[13px] text-slate-600">
+                    <span className="font-medium text-navy-800">{g.name}</span>{' '}
+                    {money(g.balance, g.currencyCode)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Link
+              href={'/contributions' as never}
+              className="shrink-0 text-[13px] font-medium text-brand-700 hover:underline"
+            >
+              Open contributions →
+            </Link>
+          </div>
+        </Card>
+      )}
+
       {/* History */}
-      <Card>
+      <Card id="transactions">
         <CardHeader
           title="Transactions"
           subtitle="Every movement in or out of the community wallet"
@@ -174,6 +246,7 @@ export function WalletClient({ initial }: { initial: WalletData }) {
                     Reference: transaction.reference,
                     Counterparty: transaction.counterparty,
                     Narration: transaction.narration,
+                    'Chart of account': transaction.coaAccount ? `${transaction.coaAccount.code} · ${transaction.coaAccount.name}` : 'Unassigned',
                   })),
                 )
               }
@@ -219,6 +292,24 @@ export function WalletClient({ initial }: { initial: WalletData }) {
                         {t.counterparty ?? t.narration}
                       </p>
                     )}
+                    <div className="mt-1 md:hidden">
+                      {t.coaAccount ? (
+                        <p className="truncate text-[11.5px] text-slate-500">
+                          COA <span className="font-mono">{t.coaAccount.code}</span> · {t.coaAccount.name}
+                        </p>
+                      ) : t.status === 'SUCCESS' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClassifying(t);
+                            setCoaChoice(SYSTEM_COA_CHOICE);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-brand-700"
+                        >
+                          <BookOpen className="h-3 w-3" /> Assign COA
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ),
@@ -228,6 +319,25 @@ export function WalletClient({ initial }: { initial: WalletData }) {
               header: 'Reference',
               hideOnMobile: true,
               cell: (t) => <span className="font-mono text-xs text-slate-500">{t.reference}</span>,
+            },
+            {
+              key: 'account',
+              header: 'Chart of account',
+              hideOnMobile: true,
+              cell: (t) => t.coaAccount ? (
+                <span className="text-[12.5px] text-slate-600"><span className="font-mono">{t.coaAccount.code}</span> · {t.coaAccount.name}</span>
+              ) : t.status === 'SUCCESS' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClassifying(t);
+                    setCoaChoice(SYSTEM_COA_CHOICE);
+                  }}
+                  className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-700 hover:underline"
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> Assign account
+                </button>
+              ) : <span className="text-xs text-slate-400">—</span>,
             },
             {
               key: 'status',
@@ -266,6 +376,27 @@ export function WalletClient({ initial }: { initial: WalletData }) {
           }
         />
       </Card>
+
+      <Modal
+        open={Boolean(classifying)}
+        onClose={() => !assignAccount.pending && setClassifying(null)}
+        size="lg"
+        title="Assign chart of account"
+        description={classifying ? `${typeLabel(classifying)} · ${money(classifying.amount, classifying.currencyCode)}` : undefined}
+        footer={<>
+          <Button variant="secondary" onClick={() => setClassifying(null)} disabled={assignAccount.pending}>Cancel</Button>
+          <Button loading={assignAccount.pending} disabled={!isCoaChoiceComplete(coaChoice)} onClick={() => void assignAccount.run()}>Assign and post</Button>
+        </>}
+      >
+        {classifying && (
+          <AccountSelector
+            selection={classifying.credit ? 'MERCHANT_MONEY_IN' : 'MERCHANT_MONEY_OUT'}
+            value={coaChoice}
+            onChange={setCoaChoice}
+            idPrefix={`wallet-${classifying.id}`}
+          />
+        )}
+      </Modal>
     </>
   );
 }

@@ -11,7 +11,9 @@ import { useMutation } from '@/hooks/use-query';
 import { money } from '@/lib/format';
 import { portalApi } from '@/services/portal';
 import type { MerchantInvoice } from '@/types';
+import type { CoaChoice } from '@/types';
 import { useRouter } from 'next/navigation';
+import { AccountSelector, coaChoicePayload, isCoaChoiceComplete, SYSTEM_COA_CHOICE } from '@/components/accounting/account-selector';
 
 type DraftItem = { description: string; quantity: string; unitPrice: string };
 const blankItem = (): DraftItem => ({ description: '', quantity: '1', unitPrice: '' });
@@ -27,9 +29,12 @@ export function InvoiceForm({ invoice, customers }: { invoice?: MerchantInvoice;
   const [issueDate, setIssueDate] = useState(invoice?.issueDate.slice(0, 10) ?? today());
   const [dueDate, setDueDate] = useState(invoice?.dueDate.slice(0, 10) ?? plusDays(30));
   const [items, setItems] = useState<DraftItem[]>(invoice ? invoice.items.map((item) => ({ description: item.description, quantity: String(item.quantity), unitPrice: item.unitPrice })) : [blankItem()]);
+  const [coaChoice, setCoaChoice] = useState<CoaChoice>(invoice?.coaAccount
+    ? { mode: 'EXISTING', accountCode: invoice.coaAccount.code }
+    : SYSTEM_COA_CHOICE);
 
   const save = useMutation(async (sendNow: boolean) => {
-    const body = { customerName: customerName.trim(), customerEmail: customerEmail.trim(), currencyCode: 'NGN', issueDate, dueDate, items: items.map((item) => ({ description: item.description.trim(), quantity: Number(item.quantity), unitPrice: item.unitPrice })) };
+    const body = { customerName: customerName.trim(), customerEmail: customerEmail.trim(), currencyCode: 'NGN', issueDate, dueDate, items: items.map((item) => ({ description: item.description.trim(), quantity: Number(item.quantity), unitPrice: item.unitPrice })), coaChoice: coaChoicePayload(coaChoice) };
     const saved = invoice ? await portalApi.updateMerchantInvoice(communityId, invoice.id, body) : await portalApi.createMerchantInvoice(communityId, body);
     if (sendNow) await portalApi.issueMerchantInvoice(communityId, saved.id);
     return { id: saved.id, sent: sendNow };
@@ -40,7 +45,7 @@ export function InvoiceForm({ invoice, customers }: { invoice?: MerchantInvoice;
 
   const updateItem = (index: number, patch: Partial<DraftItem>) => setItems((all) => all.map((item, i) => i === index ? { ...item, ...patch } : item));
   const total = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0);
-  const valid = customerName.trim() && /^\S+@\S+\.\S+$/.test(customerEmail) && issueDate && dueDate && dueDate >= issueDate && items.every((item) => item.description.trim() && Number(item.quantity) > 0 && /^\d+(\.\d{1,2})?$/.test(item.unitPrice));
+  const valid = customerName.trim() && /^\S+@\S+\.\S+$/.test(customerEmail) && issueDate && dueDate && dueDate >= issueDate && items.every((item) => item.description.trim() && Number(item.quantity) > 0 && /^\d+(\.\d{1,2})?$/.test(item.unitPrice)) && isCoaChoiceComplete(coaChoice);
   const previousCustomers = Array.from(new Map(customers.map((i) => [i.customerEmail.toLowerCase(), i])).values());
   const chooseCustomer = (email: string) => { const customer = previousCustomers.find((item) => item.customerEmail.toLowerCase() === email.toLowerCase()); if (customer) { setCustomerName(customer.customerName); setCustomerEmail(customer.customerEmail); } };
 
@@ -62,6 +67,12 @@ export function InvoiceForm({ invoice, customers }: { invoice?: MerchantInvoice;
         </div></div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4"><Button variant="ghost" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setItems((all) => [...all, blankItem()])}>Add item</Button><div className="text-right"><p className="text-xs text-slate-500">VAT ₦0.00</p><p className="text-lg font-semibold text-navy-900">Total {money(total, 'NGN')}</p></div></div>
       </Card>
+      <AccountSelector
+        selection="MERCHANT_MONEY_IN"
+        value={coaChoice}
+        onChange={setCoaChoice}
+        idPrefix="invoice-coa"
+      />
       <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={() => void save.run(false)} loading={save.pending} disabled={!valid}>Save draft</Button><Button onClick={() => void save.run(true)} loading={save.pending} disabled={!valid} icon={<Send className="h-4 w-4" />}>Send invoice</Button></div>
     </div>
   </>;

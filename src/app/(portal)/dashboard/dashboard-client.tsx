@@ -39,6 +39,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
   // their order is arbitrary, so index 0 was sometimes AUD.
   const wallet =
     d.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ?? d.wallet?.accounts[0];
+  const pots = d.ajoPots;
   const metrics = d.metrics ?? {
     activityLast7Days: d.recentActivity.length,
     newMembersLast30Days: 0,
@@ -74,7 +75,7 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
           rendiId="dashboard-wallet"
           label="Operating balance"
@@ -118,6 +119,19 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
           icon={<HandCoins className="h-4 w-4" />}
           tone={d.lending.defaulted ? 'danger' : 'default'}
         />
+        {/* Only when there is something in them: a community that runs no
+            contribution groups should not carry a permanent ₦0.00 card. The
+            operating balance above deliberately excludes this — it is the
+            members' money, held in each group's own pool. */}
+        {pots && pots.count > 0 && (
+          <Stat
+            rendiId="dashboard-ajo-pots"
+            label="Contribution pots(Ajo)"
+            value={money(pots.total)}
+            hint={`For members across ${pots.count} contribution ${pots.count === 1 ? 'group' : 'groups'}`}
+            icon={<PiggyBank className="h-4 w-4" />}
+          />
+        )}
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.85fr)]">
