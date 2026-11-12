@@ -866,10 +866,14 @@ export const portalApi = {
       corrections,
     }),
 
-  commitMigrationBatch: (communityId: string, batchId: string) =>
+  commitMigrationBatch: (
+    communityId: string,
+    batchId: string,
+    extra: MoneyOutExtra = {},
+  ) =>
     post<{ committed: number; kind: MigrationRowKind }>(
       path(communityId, `/migration/batches/${batchId}/commit`),
-      {},
+      extra,
     ),
 
   discardMigrationBatch: (communityId: string, batchId: string) =>
@@ -882,6 +886,26 @@ export const portalApi = {
     post<{ id: string; amount: string; outstanding: string }>(
       path(communityId, '/migration/funding'),
       body,
+    ),
+
+  recordMemberOpening: (
+    communityId: string,
+    memberId: string,
+    body: {
+      kind: 'SAVINGS' | 'LOAN';
+      productId: string;
+      amount: string;
+      outstanding?: string;
+      openedOn?: string;
+      dueOn?: string;
+      legacyReference?: string;
+      note?: string;
+    },
+    extra: MoneyOutExtra = {},
+  ) =>
+    post<{ kind: 'SAVINGS' | 'LOAN'; id: string; reference: string }>(
+      path(communityId, `/members/${memberId}/opening-records`),
+      { ...body, ...extra },
     ),
 
   // ───────────────────── Member invitations ─────────────────────

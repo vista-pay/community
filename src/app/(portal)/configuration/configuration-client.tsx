@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Banknote, HandCoins, Landmark, PiggyBank, RefreshCw, ScrollText, ShieldCheck } from 'lucide-react';
 import {
   Badge,
@@ -33,13 +34,17 @@ const TABS: Array<{ value: Tab; label: string }> = [
 
 export function ConfigurationClient({ initial }: { initial: CommunityConfiguration }) {
   const communityId = useCommunityId();
+  const searchParams = useSearchParams();
   const { data, refresh } = useQuery<CommunityConfiguration>(
     () => portalApi.configuration(communityId),
     [communityId],
     { initial },
   );
   const d = data ?? initial;
-  const [tab, setTab] = useState<Tab>('fees');
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(
+    requestedTab === 'policies' || requestedTab === 'payouts' ? requestedTab : 'fees',
+  );
 
   return (
     <>
@@ -367,8 +372,23 @@ function PoliciesSection({
 }) {
   const communityId = useCommunityId();
   const { policies } = config.servicePolicies;
+  const loanDefaults: Record<string, string | number | boolean> = {
+    minimumMembershipMonths: 0,
+    minimumSavingsBalance: 0,
+    minimumContributionMonths: 0,
+    maxLoanToSavingsRatio: 2,
+    maximumActiveLoans: 1,
+    guarantorsRequired: 0,
+    requiredKycTier: 'TIER_1',
+    noOverdueContributions: true,
+  };
   const [drafts, setDrafts] = useState<Record<string, Record<string, string | number | boolean>>>(
-    Object.fromEntries(policies.map((p) => [p.area, { ...p.rules }])),
+    Object.fromEntries(
+      policies.map((p) => [p.area, p.area === 'LOANS' ? { ...loanDefaults, ...p.rules } : { ...p.rules }]),
+    ),
+  );
+  const [published, setPublished] = useState<Record<string, boolean>>(
+    Object.fromEntries(policies.map((p) => [p.area, p.isPublished])),
   );
 
   const gate = useMoneyOutOtp<{ area: string }>({
@@ -380,7 +400,7 @@ function PoliciesSection({
           area: policy.area,
           content: policy.content,
           rules: drafts[area],
-          isPublished: policy.isPublished,
+          isPublished: published[area] ?? false,
         },
         extra,
       );
@@ -402,7 +422,10 @@ function PoliciesSection({
       ) : (
         policies.map((p) => {
           const draft = drafts[p.area] ?? {};
-          const dirty = JSON.stringify(draft) !== JSON.stringify(p.rules);
+          const originalRules = p.area === 'LOANS' ? { ...loanDefaults, ...p.rules } : p.rules;
+          const dirty =
+            JSON.stringify(draft) !== JSON.stringify(originalRules) ||
+            (published[p.area] ?? false) !== p.isPublished;
           const entries = Object.entries(draft);
           return (
             <Card key={p.area}>
@@ -411,8 +434,15 @@ function PoliciesSection({
                 subtitle={`Version ${p.version}`}
                 action={
                   <>
-                    <Badge tone={p.isPublished ? 'green' : 'amber'}>
-                      {p.isPublished ? 'Published' : 'Draft'}
+                    <Toggle
+                      checked={published[p.area] ?? false}
+                      label={`Publish ${humanise(p.area)} policy`}
+                      onChange={(next) =>
+                        setPublished((current) => ({ ...current, [p.area]: next }))
+                      }
+                    />
+                    <Badge tone={(published[p.area] ?? false) ? 'green' : 'amber'}>
+                      {(published[p.area] ?? false) ? 'Published' : 'Draft'}
                     </Badge>
                     <Button
                       size="sm"

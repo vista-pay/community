@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { Route } from 'next';
-import { Download, Search, UserPlus, Users } from 'lucide-react';
+import { Download, Search, UserPlus, UserRoundCheck, Users } from 'lucide-react';
 import {
   Avatar,
   Badge,
@@ -23,7 +22,7 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { portalApi } from '@/services/portal';
 import { date, money } from '@/lib/format';
 import { downloadCsv } from '@/lib/csv';
-import type { MemberRow } from '@/types';
+import type { DashboardData, MemberRow } from '@/types';
 import { isPlainMember } from '@/lib/roles';
 
 /** Stable empty result: `?? []` inline defeats the memos below. */
@@ -31,7 +30,13 @@ const NONE: never[] = [];
 
 type Filter = 'all' | 'ACTIVE' | 'PENDING' | 'SUSPENDED';
 
-export function MembersClient({ initial }: { initial: MemberRow[] }) {
+export function MembersClient({
+  initial,
+  counts,
+}: {
+  initial: MemberRow[];
+  counts?: DashboardData['navigationCounts'] | null;
+}) {
   const communityId = useCommunityId();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -140,13 +145,8 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
   return (
     <>
       <PageHeader
-        title="Existing members"
-        subtitle={`${members.length} on the register`}
-        breadcrumb={
-          <Link href={'/members' as Route} className="hover:text-navy-700">
-            Members
-          </Link>
-        }
+        title="Members"
+        subtitle={`${members.length} on the register · add people, review requests and manage historical records here`}
         actions={
           <>
             <Button
@@ -172,6 +172,13 @@ export function MembersClient({ initial }: { initial: MemberRow[] }) {
             >
               Export
             </Button>
+            <LinkButton
+              href="/members/requests"
+              variant="secondary"
+              icon={<UserRoundCheck className="h-4 w-4" />}
+            >
+              Pending members{counts?.joinRequests ? ` (${counts.joinRequests})` : ''}
+            </LinkButton>
             <LinkButton href="/members/add" icon={<UserPlus className="h-4 w-4" />}>
               Add members
             </LinkButton>

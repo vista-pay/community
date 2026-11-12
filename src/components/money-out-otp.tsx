@@ -44,6 +44,9 @@ const ACTION_LABELS: Record<string, string> = {
   CONTRIBUTION_PAYOUT: 'Release this contribution payout',
   WALLET_WITHDRAWAL: 'Send this withdrawal to a bank account',
   JOURNAL_REVERSAL: 'Approve this manual journal reversal',
+  CONFIG_LOAN_PRODUCT: 'Approve these loan product terms',
+  CONFIG_SERVICE_POLICY: 'Approve this eligibility policy',
+  MIGRATION_IMPORT: 'Approve these historical member records',
 };
 
 /** Reads the challenge out of an error, or null if it is a different error. */

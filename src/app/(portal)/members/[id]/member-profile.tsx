@@ -34,6 +34,7 @@ import { portalApi } from '@/services/portal';
 import { SuspendMember, SuspensionNotice, useSuspensionScopes } from './suspend-member';
 import type { MemberDetail } from '@/types';
 import { isOfficerRole } from '@/lib/roles';
+import { RecordOpeningBalance } from './record-opening-balance';
 
 type Tab = 'overview' | 'savings' | 'ajo' | 'loans' | 'conduct';
 
@@ -66,11 +67,12 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
 
   const savingsTotal = sumMoney(member.savingsAccounts.map((a) => a.balance));
   const loanOutstanding = sumMoney(
-    member.ajo.flatMap((g) =>
-      g.loans
-        .filter((l) => l.status === 'DISBURSED' || l.status === 'REPAYING')
-        .map((l) => l.outstanding),
-    ),
+    [
+      ...member.loans,
+      ...member.ajo.flatMap((g) => g.loans),
+    ]
+      .filter((l) => l.status === 'DISBURSED' || l.status === 'REPAYING')
+      .map((l) => l.outstanding),
   );
   const contributed = sumMoney(
     member.ajo.flatMap((g) => g.obligations.filter((o) => o.status === 'PAID').map((o) => o.amountPaid)),
@@ -83,7 +85,7 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
     <>
       <PageHeader
         breadcrumb={
-          <Link href="/members/all" className="inline-flex items-center gap-1 hover:text-navy-900">
+          <Link href="/members" className="inline-flex items-center gap-1 hover:text-navy-900">
             <ArrowLeft className="h-3.5 w-3.5" /> Members
           </Link>
         }
@@ -107,14 +109,17 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
         }
         subtitle={`${member.title ?? humanise(member.role.replace('COMMUNITY_', ''))} · joined ${date(member.joinedAt, 'long')}`}
         actions={
-          <SuspendMember
-            memberId={member.id}
-            memberName={member.name}
-            suspension={member.suspension}
-            isStaff={isStaff}
-            options={scopeOptions}
-            onChanged={refresh}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <RecordOpeningBalance member={member} onRecorded={refresh} />
+            <SuspendMember
+              memberId={member.id}
+              memberName={member.name}
+              suspension={member.suspension}
+              isStaff={isStaff}
+              options={scopeOptions}
+              onChanged={refresh}
+            />
+          </div>
         }
       />
 
@@ -158,7 +163,7 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
           {
             value: 'loans',
             label: 'Loans',
-            count: member.ajo.reduce((n, g) => n + g.loans.length, 0),
+            count: member.loans.length + member.ajo.reduce((n, g) => n + g.loans.length, 0),
           },
           { value: 'conduct', label: 'Conduct' },
         ]}
@@ -389,7 +394,7 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
         {tab === 'loans' && (
           <Card>
             <CardHeader title="Loans" />
-            {member.ajo.every((g) => g.loans.length === 0) ? (
+            {member.loans.length === 0 && member.ajo.every((g) => g.loans.length === 0) ? (
               <EmptyState
                 compact
                 icon={<HandCoins className="h-5 w-5" />}
@@ -398,13 +403,15 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
               />
             ) : (
               <ul className="divide-y divide-slate-100">
-                {member.ajo.flatMap((g) =>
-                  g.loans.map((l) => (
+                {[
+                  ...member.loans.map((loan) => ({ loan, groupName: 'Community loan' })),
+                  ...member.ajo.flatMap((g) => g.loans.map((loan) => ({ loan, groupName: g.group.name }))),
+                ].map(({ loan: l, groupName }) => (
                     <li key={l.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium text-navy-900">{l.reference}</span>
                         <span className="block text-xs text-slate-500">
-                          {g.group.name}
+                          {groupName}
                           {l.dueDate ? ` · due ${date(l.dueDate)}` : ''}
                         </span>
                       </span>
@@ -413,8 +420,7 @@ export function MemberProfile({ member: initial }: { member: MemberDetail }) {
                         {money(l.outstanding)} of {money(l.principal)}
                       </span>
                     </li>
-                  )),
-                )}
+                  ))}
               </ul>
             )}
           </Card>

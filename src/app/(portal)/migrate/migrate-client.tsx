@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
@@ -40,6 +41,7 @@ import { cn, date, money } from '@/lib/format';
 import { downloadCsv } from '@/lib/csv';
 import type { Route } from 'next';
 import type { BatchPreview, MigrationStatus, RowRejection } from '@/types';
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { MIGRATION_STEPS, UPLOAD_KINDS, fieldOrder, productKindFor, stepIndex } from './steps';
 
 /**
@@ -53,7 +55,10 @@ import { MIGRATION_STEPS, UPLOAD_KINDS, fieldOrder, productKindFor, stepIndex } 
  */
 export function MigrateClient({ initial }: { initial: MigrationStatus }) {
   const communityId = useCommunityId();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const selectedMemberCode = searchParams.get('memberCode');
+  const selectedMemberName = searchParams.get('memberName');
 
   const { data, refresh } = useQuery<MigrationStatus>(
     () => portalApi.migrationStatus(communityId),
@@ -121,17 +126,14 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
     },
   );
 
-  const commit = useMutation(
-    (batchId: string) => portalApi.commitMigrationBatch(communityId, batchId),
-    {
-      onSuccess: (result) => {
-        toast(`${result.committed} rows imported`, 'success');
-        setPreview(null);
-        void refresh();
-      },
-      onError: (message) => toast('Could not apply the import', 'error', message),
+  const commit = useMoneyOutOtp<string>({
+    perform: (extra, batchId) => portalApi.commitMigrationBatch(communityId, batchId, extra),
+    successMessage: 'Historical records approved and imported',
+    onDone: () => {
+      setPreview(null);
+      return refresh();
     },
-  );
+  });
 
   const discard = useMutation(
     (batchId: string) => portalApi.discardMigrationBatch(communityId, batchId),
@@ -161,6 +163,16 @@ export function MigrateClient({ initial }: { initial: MigrationStatus }) {
           )
         }
       />
+
+      <MoneyOutOtpDialog gate={commit} />
+
+      {selectedMemberCode ? (
+        <Callout tone="info" title={`Record existing balances for ${selectedMemberName || selectedMemberCode}`} className="mb-6">
+          Use member code <strong>{selectedMemberCode}</strong> in the savings or loan template below.
+          You can enter a single row for this member or upload several members together. Nothing becomes
+          live until the preview is checked and the community owner approves the import code.
+        </Callout>
+      ) : null}
 
       {status.members.total === 0 ? (
         <Callout tone="info" title="Before you start">

@@ -336,6 +336,8 @@ export interface StaffInvitation {
 export interface MemberDetail {
   id: string;
   userId: string;
+  memberCode: string | null;
+  memberNumber: string;
   name: string;
   email: string;
   phone: string;
@@ -358,6 +360,14 @@ export interface MemberDetail {
   }>;
   fines: Array<{ id: string; reason: string; amount: Money; status: FineStatus; issuedAt: IsoDate }>;
   attendance: Array<{ meetingId: string; title: string; date: IsoDate; state: AttendanceState }>;
+  loans: Array<{
+    id: string;
+    reference: string;
+    status: LoanStatus;
+    principal: Money;
+    outstanding: Money;
+    dueDate: IsoDate | null;
+  }>;
   ajo: Array<{
     membershipId: string;
     group: { id: string; name: string; contributionAmount: Money; currencyCode: string };

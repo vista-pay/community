@@ -103,7 +103,6 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
         children: [
           { href: '/members/add', label: 'Add new member', icon: UserPlus, countKey: 'members' },
           { href: '/members/requests', label: 'Pending members', icon: UserRoundCheck, countKey: 'joinRequests' },
-          { href: '/members/all', label: 'Existing members', icon: Users, countKey: 'members' },
         ],
       },
       { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw, countKey: 'contributions' },
