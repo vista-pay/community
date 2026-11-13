@@ -535,7 +535,7 @@ function PayoutsSection({
           <EmptyState
             icon={<Landmark className="h-5 w-5" />}
             title="No payout account"
-            body="Add the community's own bank account under the Merchant account screen. Changes there are owner-approved too."
+            body="Add the community's own bank account under the Merchant wallet screen. Changes there are owner-approved too."
             action={
               <Button variant="secondary" onClick={() => void onSaved()} icon={<Banknote className="h-4 w-4" />}>
                 Refresh

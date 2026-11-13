@@ -53,7 +53,29 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
   );
 
   const groups = data ?? [];
-  const active = groups.filter((g) => g.status === 'ACTIVE');
+
+  /**
+   * A group is running when it has a live cycle — not when its status says
+   * ACTIVE.
+   *
+   * The two are not the same, and reading the status field got both headline
+   * numbers exactly backwards. The lifecycle is OPEN → LOCKED → ACTIVE:
+   * locking a cycle is what freezes the roster and raises an obligation for
+   * every member and period, so a LOCKED group is already collecting money.
+   * ACTIVE only adds "and every payout position has a holder". Counting ACTIVE
+   * alone therefore skipped the entire stage where collection begins.
+   *
+   * It is wrong in the other direction too. Nothing moves a group out of
+   * ACTIVE when its last cycle completes — `maybeCompleteCycle` closes the
+   * cycle and leaves the group untouched — so finished groups stay ACTIVE
+   * for good. That is how a card comes to read "Active" and "No active
+   * cycle" at once.
+   *
+   * `activeCycle` is already only ever populated with a cycle in LOCKED or
+   * ACTIVE, so it answers the question directly and survives the stale
+   * status.
+   */
+  const running = groups.filter((g) => g.activeCycle);
   const visibleGroups = groups.filter((group) => {
     const start = group.startDate.slice(0, 10);
     return (
@@ -64,8 +86,12 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
     );
   });
   const statuses = [...new Set(groups.map((group) => group.status))];
+  // Only groups actually collecting contribute to the round total. A group
+  // with no live cycle owes nothing this round, so counting it overstates
+  // what is due — and made this figure disagree with the money visibly
+  // sitting in the pots on the merchant screen.
   const perRound = sumMoney(
-    active.map((g) => String(Number(g.contributionAmount) * g.memberCount)),
+    running.map((g) => String(Number(g.contributionAmount) * g.memberCount)),
   );
 
   return (
@@ -80,11 +106,16 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="Groups" value={groups.length} icon={<RefreshCw className="h-4 w-4" />} />
-        <Stat label="Running" value={active.length} icon={<Users className="h-4 w-4" />} />
+        <Stat
+          label="Running"
+          value={running.length}
+          hint="Groups with a live cycle, collecting now"
+          icon={<Users className="h-4 w-4" />}
+        />
         <Stat
           label="Collected per round"
           value={money(perRound)}
-          hint="If every member pays on time"
+          hint="Across the running groups, if every member pays on time"
         />
       </div>
 
@@ -130,7 +161,17 @@ export function ContributionsClient({ initial }: { initial: CommunityGroupRow[] 
                       {g.memberCount} of {g.memberLimit} members
                     </p>
                   </div>
-                  <StatusBadge status={g.status.toLowerCase()} />
+                  {/* Read from the cycle for the same reason the counts are:
+                      a group whose last cycle finished keeps its ACTIVE
+                      status, so the raw field would badge a finished group
+                      "Active" right beside "No active cycle". */}
+                  {g.activeCycle ? (
+                    <StatusBadge status={g.status.toLowerCase()} />
+                  ) : g.status === 'ACTIVE' ? (
+                    <Badge tone="slate">Between cycles</Badge>
+                  ) : (
+                    <StatusBadge status={g.status.toLowerCase()} />
+                  )}
                   <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">

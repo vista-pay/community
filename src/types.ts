@@ -1522,6 +1522,215 @@ export interface MerchantOverview {
   outstanding: string[];
 }
 
+// ─────────────────── Merchant flows, history & payouts ───────────────────
+
+/**
+ * The daily in/out series behind the merchant charts.
+ *
+ * Dense: every day in the window is present, zeros included. A sparse series
+ * drawn as a line joins last Tuesday to this Friday and reads as a week of
+ * steady activity when nothing happened.
+ */
+export interface MerchantFlows {
+  days: number;
+  series: Array<{ date: string; in: Money; out: Money; net: Money; count: number }>;
+  totals: { in: Money; out: Money; net: Money; count: number };
+  byType: Array<{
+    type: string;
+    direction: 'in' | 'out';
+    amount: Money;
+    inAmount: Money;
+    outAmount: Money;
+    count: number;
+  }>;
+}
+
+export interface MerchantTransaction extends WalletTransaction {
+  feeAmount: Money;
+  /** Why an officer sent this out. Only ever set on a deliberate payout. */
+  reason: string | null;
+  expense: { id: string; reference: string; payee: string } | null;
+}
+
+/**
+ * One movement through a contribution pool.
+ *
+ * Separate from `MerchantTransaction` because it is separate money: each Ajo
+ * group banks into its own pool wallet, so none of this ever reaches the
+ * merchant account.
+ */
+export interface ContributionTransaction {
+  id: string;
+  reference: string;
+  type: string;
+  status: string;
+  credit: boolean;
+  amount: Money;
+  feeAmount: Money;
+  currencyCode: string;
+  group: { id: string; name: string } | null;
+  member: string | null;
+  narration: string | null;
+  coaAccount: { id: string; code: string; name: string; type: BookAccountType } | null;
+  coaLocked: boolean;
+  createdAt: IsoDate;
+}
+
+export interface ContributionTransactionPage {
+  items: ContributionTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+  /** Every group in the community, for the filter. */
+  groups: Array<{ id: string; name: string; currencyCode: string }>;
+}
+
+export interface MerchantTransactionPage {
+  items: MerchantTransaction[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+/** A payee saved against the community, not against the officer who added it. */
+export interface MerchantBeneficiary {
+  id: string;
+  type: 'BANK' | 'VISTA';
+  displayName: string;
+  bankCode: string | null;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  recipientUserId: string | null;
+  vistaTag: string | null;
+  note: string | null;
+  isFavourite: boolean;
+  lastUsedAt: IsoDate | null;
+  /** Pre-composed for a picker row: masked bank details, or the Rendi tag. */
+  subtitle: string;
+}
+
+/** One bank from the payment provider's list, for a payout destination. */
+export interface BankOption {
+  bankName: string;
+  bankCode: string;
+  /** Two letters, for an avatar when there is no logo. */
+  initials: string;
+}
+
+/** The body shared by quoting a payout and sending it. */
+export interface MerchantPayoutRequest {
+  type: 'BANK' | 'VISTA';
+  amount: string;
+  currencyCode?: string;
+  /** Required by the API, and written beside the transaction in the books. */
+  reason: string;
+  bankCode?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  /** An email, phone or tag — resolve it to a name before sending. */
+  recipientIdentifier?: string;
+  recipientUserId?: string;
+  /** The expense this settles, so the books and the bank agree. */
+  expenseId?: string;
+  beneficiaryId?: string;
+  /**
+   * Which account in the books the payment is charged to. Omitted means the
+   * default expense account the posting rules name.
+   */
+  coaChoice?: CoaChoice;
+}
+
+export interface MerchantPayoutQuote {
+  amount: Money;
+  feeAmount: Money;
+  totalDebit: Money;
+  note?: string;
+}
+
+export interface MerchantPayoutResult {
+  id: string;
+  reference: string;
+  amount: Money;
+  currencyCode: string;
+  reason: string;
+  destination: string;
+}
+
+export type SettlementDestination = 'RENDI_WALLET' | 'BANK_ACCOUNT';
+export type SettlementSchedule = 'MANUAL' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+export interface PayoutSetting {
+  destination: SettlementDestination;
+  settlementAccount: { id: string; bankName: string; accountNumber: string; accountName: string } | null;
+  schedule: SettlementSchedule;
+  /** 1–7 for WEEKLY. */
+  dayOfWeek: number | null;
+  /** 1–28 for MONTHLY, so a monthly run cannot skip February. */
+  dayOfMonth: number | null;
+  minimumAmount: Money;
+  holdHours: number;
+  /** True while no choice has been saved: the wallet default is in force. */
+  isDefault: boolean;
+}
+
+export interface PayoutSettingsData {
+  settings: PayoutSetting;
+  accounts: MerchantSettlementAccount[];
+  summary: SettlementSummary;
+  /**
+   * What settling the current unsettled balance would cost to each
+   * destination. Zero for the wallet, always — the money is already there.
+   */
+  charge: {
+    toRendiWallet: Money;
+    toBankAccount: Money;
+    netToBankAccount: Money;
+    explanation: string;
+  };
+}
+
+export interface SettlementSummary {
+  currencyCode: string;
+  collectedAllTime: Money;
+  settledAllTime: Money;
+  /** Collected but not yet swept out. What a run right now would move. */
+  unsettled: Money;
+  coveredFrom: IsoDate;
+  coveredTo: IsoDate;
+  canSettle: boolean;
+  /** Why not, when `canSettle` is false. */
+  blockedReason: string | null;
+}
+
+export interface SettlementQuote {
+  amount: Money;
+  feeAmount: Money;
+  netAmount: Money;
+  explanation: string;
+}
+
+export interface SettlementRun {
+  id: string;
+  reference: string;
+  destination: SettlementDestination;
+  /** Pre-composed: "Rendi wallet", or the bank with the last four digits. */
+  destinationLabel: string;
+  grossAmount: Money;
+  feeAmount: Money;
+  netAmount: Money;
+  currencyCode: string;
+  status: string;
+  coveredFrom: IsoDate;
+  coveredTo: IsoDate;
+  failureReason: string | null;
+  paidAt: IsoDate | null;
+  createdAt: IsoDate;
+}
+
 export interface MerchantPaymentLink {
   id: string;
   linkHash: string;

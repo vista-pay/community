@@ -19,6 +19,7 @@ import type {
   AjoPayoutRow,
   Announcement,
   AuditEntry,
+  BankOption,
   BookAccount,
   Broadcast,
   BudgetLine,
@@ -29,6 +30,7 @@ import type {
   CommunityDocument,
   CommunityPolicy,
   ContributionBoard,
+  ContributionTransactionPage,
   DashboardData,
   WalletData,
   Expense,
@@ -71,9 +73,21 @@ import type {
   MerchantApiKeyCreated,
   MerchantInvoice,
   MerchantInvoiceDetail,
+  MerchantBeneficiary,
+  MerchantFlows,
   MerchantOverview,
   MerchantPaymentLink,
+  MerchantPayoutQuote,
+  MerchantPayoutRequest,
+  MerchantPayoutResult,
   MerchantSettlementAccount,
+  MerchantTransactionPage,
+  PayoutSettingsData,
+  SettlementDestination,
+  SettlementQuote,
+  SettlementRun,
+  SettlementSchedule,
+  SettlementSummary,
   MerchantWebhook,
   MerchantWebhookCreated,
   CommunityConfiguration,
@@ -708,6 +722,164 @@ export const portalApi = {
 
   merchantOverview: (communityId: string) =>
     get<MerchantOverview>(path(communityId, '/merchant/overview')),
+
+  /** The daily in/out series behind the merchant charts. 7–365 days. */
+  merchantFlows: (communityId: string, days = 30) =>
+    get<MerchantFlows>(path(communityId, `/merchant/flows?days=${days}`)),
+
+  /**
+   * Contribution-pool movements, paged. Separate endpoint because it is
+   * separate money — see `ContributionTransaction`.
+   */
+  contributionTransactions: (
+    communityId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      direction?: 'all' | 'in' | 'out';
+      groupId?: string;
+      type?: string;
+      status?: string;
+      search?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === '' || value === 'all') continue;
+      query.set(key, String(value));
+    }
+    const suffix = query.size ? `?${query}` : '';
+    return get<ContributionTransactionPage>(
+      path(communityId, `/contributions/transactions${suffix}`),
+    );
+  },
+
+  merchantTransactions: (
+    communityId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      direction?: 'all' | 'in' | 'out';
+      type?: string;
+      status?: string;
+      search?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ) => {
+    // Empty and `all` are dropped rather than sent: the API treats a missing
+    // filter and "all" the same, and a URL carrying `search=` reads as a
+    // filter that is on when it is not.
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === '' || value === 'all') continue;
+      query.set(key, String(value));
+    }
+    const suffix = query.size ? `?${query}` : '';
+    return get<MerchantTransactionPage>(path(communityId, `/merchant/transactions${suffix}`));
+  },
+
+  /**
+   * Banks and account-name resolution, for a transfer out.
+   *
+   * Not community-scoped: these are platform reads off the payment provider
+   * that any authenticated caller makes, and the portal holds a JWT like any
+   * other client. Duplicating them under /communities would add a second
+   * cache of the same provider list.
+   */
+  bankList: () => get<BankOption[]>('/withdrawals/banks'),
+
+  resolveBankAccount: (body: { accountNumber: string; bankCode: string }) =>
+    post<{ accountName: string; bankName?: string; resolvedBy?: string }>(
+      '/withdrawals/resolve-account',
+      body,
+    ),
+
+  // ── Payees ─────────────────────────────────────────────────────────────
+
+  merchantBeneficiaries: (communityId: string) =>
+    get<MerchantBeneficiary[]>(path(communityId, '/merchant/beneficiaries')),
+
+  saveMerchantBeneficiary: (
+    communityId: string,
+    body: {
+      type: 'BANK' | 'VISTA';
+      displayName: string;
+      bankCode?: string;
+      bankName?: string;
+      accountNumber?: string;
+      accountName?: string;
+      recipientUserId?: string;
+      vistaTag?: string;
+      note?: string;
+      isFavourite?: boolean;
+    },
+  ) => post<MerchantBeneficiary>(path(communityId, '/merchant/beneficiaries'), body),
+
+  updateMerchantBeneficiary: (
+    communityId: string,
+    beneficiaryId: string,
+    body: { displayName?: string; note?: string; isFavourite?: boolean },
+  ) =>
+    patch<MerchantBeneficiary>(
+      path(communityId, `/merchant/beneficiaries/${beneficiaryId}`),
+      body,
+    ),
+
+  removeMerchantBeneficiary: (communityId: string, beneficiaryId: string) =>
+    del<unknown>(path(communityId, `/merchant/beneficiaries/${beneficiaryId}`)),
+
+  // ── Transfers out ──────────────────────────────────────────────────────
+
+  /** Whose Rendi account this is, before anyone commits to paying it. */
+  resolveMerchantRecipient: (communityId: string, identifier: string) =>
+    get<{ userId: string; name: string; vistaTag: string | null }>(
+      path(communityId, `/merchant/payouts/resolve?identifier=${encodeURIComponent(identifier)}`),
+    ),
+
+  quoteMerchantPayout: (communityId: string, body: MerchantPayoutRequest) =>
+    post<MerchantPayoutQuote>(path(communityId, '/merchant/payouts/quote'), body),
+
+  sendMerchantPayout: (
+    communityId: string,
+    body: MerchantPayoutRequest,
+    extra: MoneyOutExtra = {},
+  ) => post<MerchantPayoutResult>(path(communityId, '/merchant/payouts'), { ...body, ...extra }),
+
+  // ── Settlement ─────────────────────────────────────────────────────────
+
+  payoutSettings: (communityId: string) =>
+    get<PayoutSettingsData>(path(communityId, '/merchant/payout-settings')),
+
+  updatePayoutSettings: (
+    communityId: string,
+    body: {
+      destination: SettlementDestination;
+      settlementAccountId?: string;
+      schedule: SettlementSchedule;
+      dayOfWeek?: number;
+      dayOfMonth?: number;
+      minimumAmount?: string;
+      holdHours?: number;
+    },
+    extra: MoneyOutExtra = {},
+  ) => patch<PayoutSettingsData>(path(communityId, '/merchant/payout-settings'), { ...body, ...extra }),
+
+  settlementRuns: (communityId: string) =>
+    get<SettlementRun[]>(path(communityId, '/merchant/settlements')),
+
+  settlementSummary: (communityId: string) =>
+    get<SettlementSummary>(path(communityId, '/merchant/settlements/summary')),
+
+  settlementQuote: (communityId: string, amount: string) =>
+    get<SettlementQuote>(
+      path(communityId, `/merchant/settlements/quote?amount=${encodeURIComponent(amount)}`),
+    ),
+
+  settleNow: (communityId: string, extra: MoneyOutExtra = {}) =>
+    post<SettlementRun>(path(communityId, '/merchant/settlements'), extra),
 
   settlementAccounts: (communityId: string) =>
     get<MerchantSettlementAccount[]>(path(communityId, '/merchant/settlement-accounts')),

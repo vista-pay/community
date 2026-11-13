@@ -30,8 +30,10 @@ import {
   FileSpreadsheet,
   ListTree,
   NotebookPen,
+  ReceiptText,
   Rows3,
   Scale,
+  Send,
   Settings,
   TrendingUp,
   SlidersHorizontal,
@@ -105,7 +107,18 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
           { href: '/members/requests', label: 'Pending members', icon: UserRoundCheck, countKey: 'joinRequests' },
         ],
       },
-      { href: '/contributions', label: 'Contributions & Ajo', icon: RefreshCw, countKey: 'contributions' },
+      {
+        href: '/contributions',
+        label: 'Contributions & Ajo',
+        icon: RefreshCw,
+        exact: true,
+        countKey: 'contributions',
+        children: [
+          // Its own page because the pools are their own money: each group
+          // banks separately, so none of this is in the merchant history.
+          { href: '/contributions/transactions', label: 'Transactions', icon: ReceiptText, countKey: 'contributions' },
+        ],
+      },
       { href: '/savings', label: 'Savings', icon: PiggyBank, countKey: 'savings' },
       {
         href: '/loans',
@@ -130,7 +143,10 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'Finance',
     items: [
-      { href: '/wallet', label: 'Wallet', icon: WalletIcon, countKey: 'wallet' },
+      // Wallet lived here as its own entry. It was the same account as the
+      // merchant one, described from a different angle, and two pages for one
+      // balance is what made Accounting and Wallet read as if they disagreed.
+      // It now opens inside Merchant, below.
       {
         href: '/accounting',
         label: 'Accounting',
@@ -160,9 +176,15 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     // its own settlement accounts, and is registered as a merchant entity at
     // the payment provider. Its own group rather than a corner of Finance —
     // Finance is the community's internal books, this is its outward face.
+    //
+    // The wallet is this account, so it is this group: the balance, the
+    // collection account, the flow charts and the history are one screen and
+    // its pages, not a separate section that happens to show the same money.
     group: 'Merchant',
     items: [
       { href: '/merchant', label: 'Merchant account', icon: Store, exact: true, countKey: 'merchant' },
+      { href: '/merchant/transactions', label: 'Transactions', icon: WalletIcon, countKey: 'wallet' },
+      { href: '/merchant/payouts', label: 'Payouts & payees', icon: Send, countKey: 'merchant' },
       { href: '/merchant/payment-links', label: 'Payment links', icon: Link2, countKey: 'merchantPaymentLinks' },
       { href: '/merchant/invoices', label: 'Invoices', icon: FileText, countKey: 'merchantInvoices' },
       // Hidden until the backend supports them. An API key authenticates

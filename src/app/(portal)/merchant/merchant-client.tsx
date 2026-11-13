@@ -12,31 +12,77 @@ import {
   FileText,
   Landmark,
   Link2,
+  PiggyBank,
+  Receipt,
+  Send,
+  Users,
+  Wallet as WalletIcon,
 } from 'lucide-react';
 import {
+  Badge,
   Button,
   Callout,
   Card,
   CardHeader,
   EmptyState,
   PageHeader,
+  Segmented,
   Stat,
 } from '@/components/ui';
+import { AreaTrend, Bars, C, Donut, Legendary } from '@/components/charts/Charts';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import { date, humanise, money } from '@/lib/format';
-import type { MerchantOverview, WalletData } from '@/types';
+import { date, humanise, money, num } from '@/lib/format';
+import { isZeroMoney } from '@/lib/money';
+import type {
+  MerchantFlows,
+  MerchantOverview,
+  PayoutSettingsData,
+  WalletData,
+} from '@/types';
 
+type Window = '7' | '30' | '90';
+
+/** Charts need numbers; the API sends decimal strings. Parsed only here. */
+const point = (row: MerchantFlows['series'][number]) => ({
+  label: new Date(row.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }),
+  in: Number(row.in),
+  out: Number(row.out),
+  net: Number(row.net),
+});
+
+const TYPE_COLOURS = [C.green, C.navy, C.gold, C.navySoft, C.slate, C.amber];
+
+/**
+ * The merchant account: one surface for the money, not two.
+ *
+ * Wallet and "merchant account" used to be separate pages describing the same
+ * balance from different angles — one showed the collection account and the
+ * COA, the other showed payment links and invoices, and neither answered "how
+ * much have we taken this month, and where did it go". They are one account,
+ * so they are one screen: what it holds, what flows through it, what is still
+ * owed to the community, and the actions that move any of it.
+ */
 export function MerchantClient({ initial }: { initial: MerchantOverview }) {
   const communityId = useCommunityId();
+  const [window, setWindow] = useState<Window>('30');
+
   const { data } = useQuery<MerchantOverview>(
     () => portalApi.merchantOverview(communityId),
     [communityId],
     { initial },
   );
-  const { data: walletData, loading: walletLoading, error: walletError } = useQuery<WalletData>(
+  const { data: walletData } = useQuery<WalletData>(
     () => portalApi.wallet(communityId),
+    [communityId],
+  );
+  const { data: flows, loading: flowsLoading } = useQuery<MerchantFlows>(
+    () => portalApi.merchantFlows(communityId, Number(window)),
+    [communityId, window],
+  );
+  const { data: payouts } = useQuery<PayoutSettingsData>(
+    () => portalApi.payoutSettings(communityId),
     [communityId],
   );
 
@@ -49,11 +95,47 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  const ngn =
+    walletData?.wallet?.accounts.find((a) => a.currencyCode === 'NGN') ??
+    walletData?.wallet?.accounts[0];
+  const currency = ngn?.currencyCode ?? 'NGN';
+  const pots = walletData?.ajoPots;
+  const summary = payouts?.summary;
+  const series = (flows?.series ?? []).map(point);
+  const recent = (walletData?.transactions ?? []).slice(0, 6);
+
+  // Only the kinds that actually moved money, biggest first, capped so the
+  // legend stays readable. Everything else collapses into one slice rather
+  // than being dropped, which would make the donut disagree with the total.
+  const byType = flows?.byType ?? [];
+  const topTypes = byType.slice(0, 5);
+  const restTotal = byType.slice(5).reduce((sum, row) => sum + Number(row.amount), 0);
+  const donut = [
+    ...topTypes.map((row, index) => ({
+      name: humanise(row.type),
+      value: Number(row.amount),
+      color: TYPE_COLOURS[index] ?? C.slate,
+    })),
+    ...(restTotal > 0 ? [{ name: 'Everything else', value: restTotal, color: C.slate }] : []),
+  ];
+
   return (
     <>
       <PageHeader
         title="Merchant account"
-        subtitle="This community collects money in its own name — from members, and from anyone it bills"
+        subtitle="Everything the community collects and everything it pays out, in one account"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link href="/merchant/payouts">
+              <Button icon={<Send className="h-4 w-4" />}>Send money</Button>
+            </Link>
+            <Link href="/merchant/transactions">
+              <Button variant="secondary" icon={<Receipt className="h-4 w-4" />}>
+                All transactions
+              </Button>
+            </Link>
+          </div>
+        }
       />
 
       {/* What is still outstanding, in order. The sequence is not obvious:
@@ -75,14 +157,16 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
             <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-white/60">
               <Landmark className="h-4 w-4" /> Merchant collection account
             </p>
-            <h2 className="mt-2 text-lg font-bold">{d.community.name}</h2>
-            <p className="mt-1 text-[13px] leading-5 text-white/70">
-              A transfer from any Nigerian bank credits the community wallet automatically. The
-              account answers to the community&rsquo;s own name, not an officer&rsquo;s.
+            <h2 className="mt-2 text-2xl font-bold">{d.community.name}</h2>
+            {/* One line, not a paragraph. An officer opening this screen is
+                looking for the account number to hand out — the explanation
+                was three sentences standing between them and it. */}
+            <p className="mt-1.5 text-[13px] leading-5 text-white/70">
+              Share with members, transfers from any Nigerian bank credit it automatically.
             </p>
             {d.walletNumber && (
-              <p className="mt-3 text-[12px] text-white/50">
-                Wallet <span className="tnum font-semibold text-white/70">{d.walletNumber}</span>
+              <p className="mt-4 text-[12px] text-white/40">
+                Wallet <span className="tnum font-medium text-white/60">{d.walletNumber}</span>
               </p>
             )}
           </div>
@@ -125,8 +209,205 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
         </div>
       </div>
 
-      {/* Merchant status + what the desk holds. Only what the backend can
-          actually do: the collection account, payment links and invoices. */}
+      {/* The balance, and the two numbers officers confuse it with: money
+          held for members in pots, and money collected but not yet settled. */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Available"
+          value={ngn ? money(ngn.available, ngn.currencyCode) : '—'}
+          hint="Spendable now — loans, welfare and transfers out pay from this"
+          icon={<WalletIcon className="h-4 w-4" />}
+        />
+        <Stat
+          label="Pending"
+          value={ngn ? money(ngn.pending, ngn.currencyCode) : '—'}
+          hint="Arriving, not yet cleared"
+          icon={<ArrowDownLeft className="h-4 w-4" />}
+        />
+        <Stat
+          label="Waiting to settle"
+          value={summary ? money(summary.unsettled, summary.currencyCode) : '—'}
+          hint={
+            summary
+              ? (summary.blockedReason ?? 'Ready to sweep to your settlement destination')
+              : 'Collections are held until a settlement run sweeps them'
+          }
+          tone={summary?.canSettle ? 'positive' : 'default'}
+          icon={<PiggyBank className="h-4 w-4" />}
+          footer={
+            <Link href="/merchant/payouts" className="font-semibold text-brand-700">
+              Settlement settings
+            </Link>
+          }
+        />
+        {/* Deliberately its own card rather than folded into Available.
+            Available would say the community can spend money that belongs to
+            whoever the rotation pays next. */}
+        <Stat
+          label="Contribution pots"
+          value={money(pots?.total ?? '0', currency)}
+          hint={
+            pots && pots.count > 0
+              ? `Held for members in ${pots.count} pot${pots.count === 1 ? '' : 's'} — not spendable here`
+              : 'No contribution pots open'
+          }
+          icon={<Users className="h-4 w-4" />}
+        />
+      </div>
+
+      {pots && pots.count > 0 && !isZeroMoney(pots.total) && (
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+              <PiggyBank className="h-4 w-4" aria-hidden />
+            </span>
+            <div className="min-w-[220px] flex-1">
+              <p className="text-sm font-medium text-navy-900">
+                Where the {money(pots.total, currency)} in pots is sitting
+              </p>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+                Each contribution group banks into its own pool, not this account. Your books count
+                it as an asset against a matching liability, which is why Accounting reads higher
+                than Available.
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {pots.groups.map((g) => (
+                  <li key={g.id} className="text-[13px] text-slate-600">
+                    <span className="font-medium text-navy-800">{g.name}</span>{' '}
+                    {money(g.balance, g.currencyCode)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Link
+              href="/contributions"
+              className="shrink-0 text-[13px] font-medium text-brand-700 hover:underline"
+            >
+              Open contributions →
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {/* ── How money flows ────────────────────────────────────────────── */}
+      <Card className="mb-6">
+        <CardHeader
+          title="How money flows"
+          subtitle="Successful movements only — pending money has not arrived yet"
+          action={
+            <Segmented
+              size="sm"
+              label="Window"
+              value={window}
+              onChange={setWindow}
+              options={[
+                { value: '7', label: '7 days' },
+                { value: '30', label: '30 days' },
+                { value: '90', label: '90 days' },
+              ]}
+            />
+          }
+        />
+
+        <div className="grid gap-4 border-b border-slate-100 px-5 py-4 sm:grid-cols-3">
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
+              Money in
+            </p>
+            <p className="tnum mt-1 text-xl font-bold text-emerald-600">
+              +{money(flows?.totals.in ?? '0', currency)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
+              Money out
+            </p>
+            <p className="tnum mt-1 text-xl font-bold text-navy-900">
+              −{money(flows?.totals.out ?? '0', currency)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
+              Net
+            </p>
+            <p
+              className={`tnum mt-1 text-xl font-bold ${
+                Number(flows?.totals.net ?? 0) < 0 ? 'text-red-600' : 'text-navy-900'
+              }`}
+            >
+              {money(flows?.totals.net ?? '0', currency)}
+            </p>
+            <p className="mt-0.5 text-[12px] text-slate-500">
+              across {num(flows?.totals.count ?? 0)} movement
+              {flows?.totals.count === 1 ? '' : 's'}
+            </p>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {flowsLoading && !flows ? (
+            <p className="py-10 text-center text-sm text-slate-500">Reading the flow…</p>
+          ) : flows?.totals.count === 0 ? (
+            <EmptyState
+              compact
+              title="No movement in this window"
+              body="Try a longer window, or share the collection account with members."
+            />
+          ) : (
+            <>
+              <AreaTrend
+                data={series}
+                x="label"
+                height={260}
+                series={[
+                  { key: 'in', name: 'Money in', color: C.green },
+                  { key: 'out', name: 'Money out', color: C.navy },
+                ]}
+              />
+              <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
+                <div>
+                  <p className="mb-2 text-[13px] font-semibold text-navy-900">
+                    Net movement per day
+                  </p>
+                  <Bars
+                    data={series}
+                    x="label"
+                    height={200}
+                    series={[{ key: 'net', name: 'Net', color: C.gold }]}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-[13px] font-semibold text-navy-900">
+                    What the flow is made of
+                  </p>
+                  <div className="grid items-center gap-4 sm:grid-cols-[180px_1fr]">
+                    <Donut
+                      data={donut}
+                      center={{
+                        label: 'total flow',
+                        value: money(
+                          String(Number(flows?.totals.in ?? 0) + Number(flows?.totals.out ?? 0)),
+                          currency,
+                          { compact: true },
+                        ),
+                      }}
+                    />
+                    <Legendary
+                      items={donut.map((slice) => ({
+                        name: slice.name,
+                        color: slice.color,
+                        value: money(String(slice.value), currency, { compact: true }),
+                      }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+
+      {/* ── What the desk does ─────────────────────────────────────────── */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Stat
           label="Account type"
@@ -147,7 +428,7 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
         <Stat
           label="Payment links"
           value={d.counts.paymentLinks}
-          hint="Shareable requests that credit the wallet"
+          hint="Shareable requests that credit this account"
           icon={<Link2 className="h-4 w-4" />}
           footer={
             <Link href="/merchant/payment-links" className="font-semibold text-brand-700">
@@ -166,71 +447,71 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
             </Link>
           }
         />
-        {/* Integrations tile hidden with the API-key and webhook pages: a key
-            authenticates nothing and no endpoint is ever called, so a count of
-            them told an officer they had working integrations. Restore this
-            alongside the two nav entries in app-shell.tsx.
-        <Stat
-          label="Integrations"
-          value={`${d.counts.apiKeys} / ${d.counts.webhooks}`}
-          hint="Active API keys / webhook endpoints"
-          icon={<KeyRound className="h-4 w-4" />}
-          footer={
-            <span className="flex gap-3">
-              <Link href="/merchant/api-keys" className="font-semibold text-brand-700">API keys</Link>
-              <Link href="/merchant/webhooks" className="font-semibold text-brand-700">Webhooks</Link>
-            </span>
-          }
-        />
-        */}
       </div>
 
-      <Card className="mb-6" id="merchant-wallet-coa">
+      {/* ── Latest movements ───────────────────────────────────────────── */}
+      <Card id="merchant-wallet-coa">
         <CardHeader
-          title="Merchant wallet & chart of accounts"
-          subtitle="See where every payment received or sent belongs in your books"
+          title="Latest movements"
+          subtitle="Where every payment received or sent belongs in your books"
           action={
-            <Link href="/wallet#transactions">
-              <Button size="sm" icon={<BookOpen className="h-4 w-4" />}>
-                Manage wallet COA
+            <Link href="/merchant/transactions">
+              <Button size="sm" variant="secondary" icon={<Receipt className="h-4 w-4" />}>
+                View all
               </Button>
             </Link>
           }
         />
 
-        {walletError ? (
-          <div className="p-5">
-            <Callout tone="warning" title="Wallet transactions are unavailable">
-              {walletError}
-            </Callout>
-          </div>
-        ) : walletLoading && !walletData ? (
-          <div className="p-5 text-sm text-slate-500">Loading merchant wallet transactions…</div>
-        ) : !walletData?.transactions.length ? (
+        {recent.length === 0 ? (
           <EmptyState
             compact
-            title="No wallet movements yet"
-            body="Payments received through the collection account, payment links, or invoices will appear here."
+            title="No movements yet"
+            body="Payments received through the collection account, payment links or invoices will appear here."
           />
         ) : (
           <div className="divide-y divide-slate-100">
-            {walletData.transactions.slice(0, 5).map((transaction) => (
-              <div key={transaction.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${transaction.credit ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>
-                  {transaction.credit ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+            {recent.map((transaction) => (
+              <div
+                key={transaction.id}
+                className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
+              >
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                    transaction.credit
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {transaction.credit ? (
+                    <ArrowDownLeft className="h-4 w-4" />
+                  ) : (
+                    <ArrowUpRight className="h-4 w-4" />
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-[13px] font-semibold text-navy-900">{humanise(transaction.type)}</p>
+                    <p className="text-[13px] font-semibold text-navy-900">
+                      {humanise(transaction.type)}
+                    </p>
                     <span className="text-xs text-slate-400">{date(transaction.createdAt)}</span>
                   </div>
-                  <p className="mt-0.5 truncate font-mono text-[11.5px] text-slate-500">{transaction.reference}</p>
+                  <p className="mt-0.5 truncate font-mono text-[11.5px] text-slate-500">
+                    {transaction.reference}
+                  </p>
                   {transaction.coaAccount ? (
                     <p className="mt-1 text-[12.5px] text-slate-600">
-                      COA <span className="font-mono font-semibold text-navy-800">{transaction.coaAccount.code}</span> · {transaction.coaAccount.name}
+                      COA{' '}
+                      <span className="font-mono font-semibold text-navy-800">
+                        {transaction.coaAccount.code}
+                      </span>{' '}
+                      · {transaction.coaAccount.name}
                     </p>
                   ) : transaction.status === 'SUCCESS' ? (
-                    <Link href="/wallet#transactions" className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-semibold text-amber-700 hover:underline">
+                    <Link
+                      href="/merchant/transactions"
+                      className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-semibold text-amber-700 hover:underline"
+                    >
                       <BookOpen className="h-3.5 w-3.5" /> COA not assigned — assign now
                     </Link>
                   ) : (
@@ -238,40 +519,25 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
                   )}
                 </div>
                 <div className="sm:text-right">
-                  <p className={`tnum text-sm font-bold ${transaction.credit ? 'text-emerald-600' : 'text-navy-900'}`}>
-                    {transaction.credit ? '+' : '−'}{money(transaction.amount, transaction.currencyCode)}
+                  <p
+                    className={`tnum text-sm font-bold ${
+                      transaction.credit ? 'text-emerald-600' : 'text-navy-900'
+                    }`}
+                  >
+                    {transaction.credit ? '+' : '−'}
+                    {money(transaction.amount, transaction.currencyCode)}
                   </p>
-                  <p className="mt-0.5 text-[11.5px] text-slate-500">{humanise(transaction.status)}</p>
+                  <p className="mt-0.5 text-[11.5px] text-slate-500">
+                    <Badge tone={transaction.status === 'SUCCESS' ? 'green' : 'slate'}>
+                      {humanise(transaction.status)}
+                    </Badge>
+                  </p>
                 </div>
               </div>
             ))}
-            {walletData.transactions.length > 5 && (
-              <div className="px-5 py-3 text-center">
-                <Link href="/wallet#transactions" className="text-[13px] font-semibold text-brand-700 hover:underline">
-                  View all {walletData.transactions.length} wallet transactions
-                </Link>
-              </div>
-            )}
           </div>
         )}
       </Card>
-
-      {/* Settlement accounts — intentionally not rendered yet.
-
-          Nothing consumes one for a community: WithdrawalsService handles
-          personal and business wallets only, and its allowlist check is gated
-          on businessId, so there is no community-to-bank payout path for the
-          details to feed. Asking an officer for a bank account that no code
-          reads is the same mistake the removed Paystack subaccount made.
-
-          The component is real, typed and linted in ./settlement-accounts —
-          re-enable by importing SettlementAccountsCard and uncommenting:
-
-          <SettlementAccountsCard
-            accounts={d.settlementAccounts}
-            onChanged={refresh}   // destructure `refresh` from useQuery above
-          />
-      */}
     </>
   );
 }

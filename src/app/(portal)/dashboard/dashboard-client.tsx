@@ -65,8 +65,8 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
         subtitle={[d.community.category, d.community.city].filter(Boolean).join(' · ') || undefined}
         actions={
           <>
-            <LinkButton variant="secondary" href="/wallet">
-              Fund wallet
+            <LinkButton variant="secondary" href="/merchant">
+              Merchant account
             </LinkButton>
             <LinkButton variant="secondary" href="/reports">
               Reports
