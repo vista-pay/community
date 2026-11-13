@@ -292,7 +292,7 @@ function AddSettlementAccountModal({
         open={open}
         onClose={onClose}
         title="Add a settlement account"
-        description="The community’s own bank account — where its money goes when it leaves Rendi."
+        description="Where the community’s money goes when it leaves Rendi. It must be an account in the community’s own name — the one it registered and had verified."
         footer={
           <>
             <Button variant="secondary" onClick={onClose}>
@@ -355,7 +355,8 @@ function AddSettlementAccountModal({
             </p>
           ) : (
             <p className="text-[13px] text-slate-500">
-              The account name appears here once the bank confirms it.
+              The account name appears here once the bank confirms it, and is checked against the
+              community&rsquo;s registered name.
             </p>
           )}
           <Checkbox

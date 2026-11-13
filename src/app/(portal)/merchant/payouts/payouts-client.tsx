@@ -21,6 +21,7 @@ import {
   Checkbox,
   DataTable,
   EmptyState,
+  ErrorState,
   Field,
   Input,
   PageHeader,
@@ -59,6 +60,46 @@ const SCHEDULES: Array<{ value: SettlementSchedule; label: string; hint: string 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 /**
+ * What the screen assumes before anything has loaded.
+ *
+ * Not a pretence that the data arrived — the error banner says plainly when
+ * it did not. It exists so the form's state hooks have something to
+ * initialise from, since hooks cannot be skipped and a half-rendered screen
+ * is still better than no screen at all.
+ */
+const NOTHING_LOADED: PayoutSettingsData = {
+  settings: {
+    destination: 'RENDI_WALLET',
+    settlementAccount: null,
+    schedule: 'MANUAL',
+    dayOfWeek: null,
+    dayOfMonth: null,
+    minimumAmount: '0.00',
+    holdHours: 0,
+    autoSettle: false,
+    autoSettleCeiling: null,
+    isDefault: true,
+  },
+  accounts: [],
+  summary: {
+    currencyCode: 'NGN',
+    collectedAllTime: '0.00',
+    settledAllTime: '0.00',
+    unsettled: '0.00',
+    coveredFrom: new Date(0).toISOString(),
+    coveredTo: new Date(0).toISOString(),
+    canSettle: false,
+    blockedReason: null,
+  },
+  charge: {
+    toRendiWallet: '0.00',
+    toBankAccount: '0.00',
+    netToBankAccount: '0.00',
+    explanation: '',
+  },
+};
+
+/**
  * Payouts in one place: sending money out, who you send it to, and where the
  * community's collections settle.
  *
@@ -68,7 +109,7 @@ const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
  * sets a destination on one page and cannot see on another that nothing has
  * actually been swept there.
  */
-export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
+export function PayoutsClient({ initial }: { initial?: PayoutSettingsData }) {
   const communityId = useCommunityId();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -77,7 +118,7 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
     requestedTab === 'payees' || requestedTab === 'settlement' ? requestedTab : 'send',
   );
 
-  const { data, refresh } = useQuery<PayoutSettingsData>(
+  const { data, error, loading, refresh } = useQuery<PayoutSettingsData>(
     () => portalApi.payoutSettings(communityId),
     [communityId],
     { initial },
@@ -95,7 +136,10 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
     [communityId],
   );
 
-  const d = data ?? initial;
+  const d = data ?? initial ?? NOTHING_LOADED;
+  // Nothing on screen is real yet. Said once, at the top, rather than letting
+  // an officer read zeroes as fact.
+  const unavailable = !data && !initial;
   const summary = d.summary;
   const beneficiaries = payees ?? [];
   const ngnAccount =
@@ -177,6 +221,17 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
           </Link>
         }
       />
+
+      {unavailable && !loading && (
+        <ErrorState
+          title="Payout settings could not be loaded"
+          body={
+            error ??
+            'The server did not answer. Nothing below is accurate until it does.'
+          }
+          onRetry={() => void refresh()}
+        />
+      )}
 
       <Tabs
         className="mb-6"
