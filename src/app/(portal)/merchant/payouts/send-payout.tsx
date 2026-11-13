@@ -104,6 +104,8 @@ export function SendPayout({
 
   const bankKeyOf = (option: BankOption) => `${option.bankCode}::${option.bankName}`;
   const bank = banks?.find((option) => bankKeyOf(option) === bankKey) ?? null;
+  // The bill this payment settles, if any. It already names its account.
+  const selectedExpense = expenses?.find((e) => e.id === expenseId) ?? null;
   const bankCode = bank?.bankCode ?? '';
 
   const debouncedAccountNumber = useDebounced(accountNumber, 500);
@@ -423,7 +425,7 @@ export function SendPayout({
             <Field
               label="Settles an expense"
               optional
-              hint="Links the payment to a bill in your books"
+              hint="Marks an approved bill as paid and posts it to its own account"
             >
               <Select value={expenseId} onChange={(event) => setExpenseId(event.target.value)}>
                 <option value="">Not linked to an expense</option>
@@ -455,15 +457,29 @@ export function SendPayout({
               more specific can say so — or create the account here without
               leaving the form. Before this, a transfer out was the one money
               movement that posted nowhere until somebody classified it after
-              the fact. */}
-          <div className="rounded-xl border border-slate-200 p-4">
-            <AccountSelector
-              selection="MERCHANT_MONEY_OUT"
-              value={coaChoice}
-              onChange={setCoaChoice}
-              idPrefix="payout"
-            />
-          </div>
+              the fact.
+
+              Hidden entirely when the payment settles a recorded bill: that
+              bill was coded to an account when it was raised, and offering
+              the choice again invites a second, different answer for the
+              same expense. */}
+          {selectedExpense ? (
+            <Callout tone="info" title="Posted to the expense's own account">
+              {selectedExpense.reference} · {selectedExpense.payee} is already coded to{' '}
+              <span className="font-mono font-semibold">{selectedExpense.accountCode}</span> ·{' '}
+              {selectedExpense.accountName}. Paying it here posts it there and marks the bill
+              paid — there is nothing left to classify.
+            </Callout>
+          ) : (
+            <div className="rounded-xl border border-slate-200 p-4">
+              <AccountSelector
+                selection="MERCHANT_MONEY_OUT"
+                value={coaChoice}
+                onChange={setCoaChoice}
+                idPrefix="payout"
+              />
+            </div>
+          )}
 
           {!beneficiaryId && destinationReady && (
             <div className="space-y-3 rounded-xl bg-slate-50 p-4">
