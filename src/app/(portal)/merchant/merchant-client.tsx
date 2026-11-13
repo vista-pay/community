@@ -25,6 +25,8 @@ import {
   Card,
   CardHeader,
   EmptyState,
+  Field,
+  Input,
   PageHeader,
   Segmented,
   Stat,
@@ -42,7 +44,21 @@ import type {
   WalletData,
 } from '@/types';
 
-type Window = '7' | '30' | '90';
+type Window = '7' | '30' | '90' | 'custom';
+
+function isoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function defaultCustomRange() {
+  const to = new Date();
+  const from = new Date(to);
+  from.setDate(from.getDate() - 29);
+  return { from: isoDate(from), to: isoDate(to) };
+}
 
 /** Charts need numbers; the API sends decimal strings. Parsed only here. */
 const point = (row: MerchantFlows['series'][number]) => ({
@@ -67,6 +83,12 @@ const TYPE_COLOURS = [C.green, C.navy, C.gold, C.navySoft, C.slate, C.amber];
 export function MerchantClient({ initial }: { initial: MerchantOverview }) {
   const communityId = useCommunityId();
   const [window, setWindow] = useState<Window>('30');
+  const [customDraft, setCustomDraft] = useState(defaultCustomRange);
+  const [customRange, setCustomRange] = useState(defaultCustomRange);
+  const customError =
+    customDraft.from && customDraft.to && customDraft.from > customDraft.to
+      ? 'Start date must be before the end date'
+      : '';
 
   const { data } = useQuery<MerchantOverview>(
     () => portalApi.merchantOverview(communityId),
@@ -78,8 +100,12 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
     [communityId],
   );
   const { data: flows, loading: flowsLoading } = useQuery<MerchantFlows>(
-    () => portalApi.merchantFlows(communityId, Number(window)),
-    [communityId, window],
+    () =>
+      portalApi.merchantFlows(
+        communityId,
+        window === 'custom' ? customRange : Number(window),
+      ),
+    [communityId, window, customRange.from, customRange.to],
   );
   const { data: payouts } = useQuery<PayoutSettingsData>(
     () => portalApi.payoutSettings(communityId),
@@ -235,7 +261,7 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
           tone={summary?.canSettle ? 'positive' : 'default'}
           icon={<PiggyBank className="h-4 w-4" />}
           footer={
-            <Link href="/merchant/payouts" className="font-semibold text-brand-700">
+            <Link href="/merchant/payouts?tab=settlement" className="font-semibold text-brand-700">
               Settlement settings
             </Link>
           }
@@ -304,10 +330,49 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
                 { value: '7', label: '7 days' },
                 { value: '30', label: '30 days' },
                 { value: '90', label: '90 days' },
+                { value: 'custom', label: 'Custom' },
               ]}
             />
           }
         />
+
+        {window === 'custom' && (
+          <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+            <Field label="From" htmlFor="merchant-flow-from" error={customError}>
+              <Input
+                id="merchant-flow-from"
+                type="date"
+                max={customDraft.to || isoDate(new Date())}
+                value={customDraft.from}
+                onChange={(event) =>
+                  setCustomDraft((current) => ({ ...current, from: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="To" htmlFor="merchant-flow-to">
+              <Input
+                id="merchant-flow-to"
+                type="date"
+                min={customDraft.from || undefined}
+                max={isoDate(new Date())}
+                value={customDraft.to}
+                onChange={(event) =>
+                  setCustomDraft((current) => ({ ...current, to: event.target.value }))
+                }
+              />
+            </Field>
+            <Button
+              size="sm"
+              disabled={!customDraft.from || !customDraft.to || Boolean(customError)}
+              onClick={() => setCustomRange(customDraft)}
+            >
+              Apply range
+            </Button>
+            <p className="pb-2 text-xs text-slate-500">
+              Maximum range: 365 days. Both dates are included.
+            </p>
+          </div>
+        )}
 
         <div className="grid gap-4 border-b border-slate-100 px-5 py-4 sm:grid-cols-3">
           <div>

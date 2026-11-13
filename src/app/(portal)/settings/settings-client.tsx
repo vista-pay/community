@@ -17,6 +17,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { useMutation } from '@/hooks/use-query';
+import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCan, useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
@@ -180,22 +181,26 @@ export function SettingsClient({ community, initialPolicies }: { community: Comm
     },
   );
 
-  const savePolicy = useMutation(
-    (policy: CommunityPolicy) =>
-      portalApi.updatePolicy(communityId, {
-        area: policy.area,
-        content: policy.content,
-        rules: policy.rules,
-        isPublished: policy.isPublished,
-      }),
-    {
-      onSuccess: (saved) => {
-        setPolicies((current) => current.map((policy) => (policy.area === saved.area ? saved : policy)));
-        toast('Policy saved', 'success', saved.isPublished ? 'Published for members.' : 'Saved as an officer draft.');
-      },
-      onError: (message) => toast('Could not save policy', 'error', message),
+  const savePolicy = useMoneyOutOtp<CommunityPolicy>({
+    perform: (extra, policy) =>
+      portalApi.updatePolicy(
+        communityId,
+        {
+          area: policy.area,
+          content: policy.content,
+          rules: policy.rules,
+          isPublished: policy.isPublished,
+        },
+        extra,
+      ),
+    onDone: async () => {
+      // Reload every policy after approval so the saved version, visibility
+      // and server-normalised rules replace the draft without losing the
+      // other cards the officer may still be editing.
+      setPolicies(await portalApi.policies(communityId));
     },
-  );
+    successMessage: 'Policy saved',
+  });
 
   return (
     <>
@@ -550,6 +555,7 @@ export function SettingsClient({ community, initialPolicies }: { community: Comm
           </Card>
         </div>
       )}
+      <MoneyOutOtpDialog gate={savePolicy} />
     </>
   );
 }

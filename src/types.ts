@@ -245,6 +245,11 @@ export interface DashboardData {
     merchantApiKeys: number;
     merchantWebhooks: number;
     configuration: number;
+    /**
+     * Decisions held up on this officer personally. Unlike the others this is
+     * not "new since you last looked" — it only clears by deciding.
+     */
+    approvals: number;
   };
   /** Money held for members in contribution pots — see AjoPots. */
   ajoPots?: AjoPots;
@@ -257,6 +262,213 @@ export interface DashboardData {
     actorId: string | null;
     at: IsoDate;
   }>;
+}
+
+
+// ───────────────── Multi-level approval & authorisation ─────────────────
+
+export type ApprovalCategory = 'FINANCIAL' | 'ACCOUNT_SETTINGS' | 'ADMIN_POLICY';
+export type ApprovalMode = 'SEQUENTIAL' | 'PARALLEL';
+export type ApprovalRequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'DECLINED'
+  | 'RETURNED'
+  | 'CANCELLED'
+  | 'EXECUTED'
+  | 'EXECUTION_FAILED'
+  | 'EXPIRED';
+export type ApprovalStepStatus = 'WAITING' | 'PENDING' | 'APPROVED' | 'DECLINED' | 'SKIPPED';
+export type ApprovalDecisionKind =
+  | 'APPROVED'
+  | 'DECLINED'
+  | 'RETURNED'
+  | 'INFO_REQUESTED'
+  | 'CANCELLED';
+
+/** Which queue an officer is looking at. */
+export type ApprovalBucket =
+  | 'AWAITING_ME'
+  | 'AWAITING_OTHERS'
+  | 'READY_TO_EXECUTE'
+  | 'RETURNED'
+  | 'DECLINED'
+  | 'MINE'
+  | 'HISTORY';
+
+/** One row in an approval queue. */
+export interface ApprovalRow {
+  id: string;
+  reference: string;
+  operation: string;
+  operationLabel: string;
+  category: ApprovalCategory | null;
+  movesMoney: boolean;
+  status: ApprovalRequestStatus;
+  title: string;
+  summary: string;
+  amount: Money | null;
+  currencyCode: string | null;
+  requestedBy: string;
+  requestedById: string;
+  member: string | null;
+  requestedAt: IsoDate;
+  decidedAt: IsoDate | null;
+  executedAt: IsoDate | null;
+  stageCount: number;
+  approvalCount: number;
+  requiredApprovals: number;
+  currentStage: { position: number; role: string | null } | null;
+  /** True when this officer is the one holding it up. */
+  awaitingMe: boolean;
+  isMine: boolean;
+  messageCount: number;
+  expiresAt: IsoDate | null;
+  executionError: string | null;
+}
+
+export interface ApprovalDecisionEntry {
+  id: string;
+  by: string;
+  role: string | null;
+  decision: ApprovalDecisionKind;
+  comment: string | null;
+  at: IsoDate;
+  selfAuthenticated?: boolean;
+}
+
+export interface ApprovalStage {
+  id: string;
+  position: number;
+  role: string | null;
+  requiredApprovals: number;
+  approvalCount: number;
+  isFinalAuthority: boolean;
+  isOptional: boolean;
+  instruction: string | null;
+  status: ApprovalStepStatus;
+  completedAt: IsoDate | null;
+  decisions: ApprovalDecisionEntry[];
+}
+
+/** One request with its whole trail. */
+export interface ApprovalDetail extends Omit<ApprovalRow, 'awaitingMe' | 'isMine' | 'messageCount'> {
+  mode: ApprovalMode;
+  payload: Record<string, unknown>;
+  subjectType: string;
+  subjectId: string;
+  policyVersion: number;
+  currentStep: number;
+  declineReason: string | null;
+  executionRef: string | null;
+  supersedes: { id: string; reference: string } | null;
+  /** What the officer reading it may do right now. */
+  myActions: {
+    canDecide: boolean;
+    stepId: string | null;
+    stepPosition: number | null;
+    isFinalAuthority: boolean;
+    blockedBySelfApproval: boolean;
+    canCancel: boolean;
+  };
+  stages: ApprovalStage[];
+  trail: ApprovalDecisionEntry[];
+  messages: {
+    id: string;
+    by: string;
+    text: string;
+    attachmentUrl: string | null;
+    internal: boolean;
+    at: IsoDate;
+  }[];
+}
+
+export interface ApprovalCounts {
+  awaitingMe: number;
+  awaitingOthers: number;
+  readyToExecute: number;
+  returned: number;
+}
+
+/** One configured band of an operation's policy. */
+export interface ApprovalPolicyBand {
+  id: string;
+  isEnabled: boolean;
+  mode: ApprovalMode;
+  requiredApprovals: number | null;
+  minAmount: Money;
+  maxAmount: Money | null;
+  currencyCode: string;
+  allowSelfApproval: boolean;
+  expiresAfterHours: number;
+  autoExecute: boolean;
+  version: number;
+  updatedAt: IsoDate;
+  steps: {
+    id: string;
+    position: number;
+    roleId: string | null;
+    roleLabel: string | null;
+    memberId: string | null;
+    requiredApprovals: number;
+    isFinalAuthority: boolean;
+    isOptional: boolean;
+    instruction: string | null;
+  }[];
+}
+
+export interface ApprovalOperationSetting {
+  key: string;
+  label: string;
+  description: string;
+  resource: string;
+  movesMoney: boolean;
+  /** The platform will not let this one be switched off. */
+  mandatory: boolean;
+  /** True when the platform can carry the action out itself on final approval. */
+  canAutoExecute: boolean;
+  recommended: string[];
+  isConfigured: boolean;
+  /** What applies when nothing is configured. Null when nothing does. */
+  effective: {
+    isDefault: boolean;
+    mode: ApprovalMode;
+    requiredApprovals: number;
+    stages: { position: number; role: string | null; isFinalAuthority: boolean }[];
+  } | null;
+  bands: ApprovalPolicyBand[];
+}
+
+export interface ApprovalPolicyOverview {
+  categories: {
+    category: ApprovalCategory;
+    label: string;
+    operations: ApprovalOperationSetting[];
+  }[];
+  roles: { id: string; name: string; label: string; activeHolders: number }[];
+  officers: { id: string; userId: string; name: string; role: string }[];
+}
+
+/** What the settings screen sends back. */
+export interface ApprovalPolicyInput {
+  isEnabled: boolean;
+  bands: {
+    minAmount?: string;
+    maxAmount?: string;
+    mode?: ApprovalMode;
+    requiredApprovals?: number | null;
+    allowSelfApproval?: boolean;
+    expiresAfterHours?: number;
+    autoExecute?: boolean;
+    steps: {
+      roleId?: string;
+      memberId?: string;
+      requiredApprovals?: number;
+      isFinalAuthority?: boolean;
+      isOptional?: boolean;
+      instruction?: string;
+    }[];
+  }[];
 }
 
 // ───────────────────────────── Members ─────────────────────────────
@@ -1533,6 +1745,8 @@ export interface MerchantOverview {
  */
 export interface MerchantFlows {
   days: number;
+  from: string;
+  to: string;
   series: Array<{ date: string; in: Money; out: Money; net: Money; count: number }>;
   totals: { in: Money; out: Money; net: Money; count: number };
   byType: Array<{
@@ -1673,6 +1887,14 @@ export interface PayoutSetting {
   dayOfMonth: number | null;
   minimumAmount: Money;
   holdHours: number;
+  /**
+   * Whether the schedule may send to the bank unattended. The owner approves
+   * the arrangement once instead of every run; the destination stays limited
+   * to a registered account, so automation cannot redirect money.
+   */
+  autoSettle: boolean;
+  /** Most one unattended run may move. Null means no ceiling. */
+  autoSettleCeiling: Money | null;
   /** True while no choice has been saved: the wallet default is in force. */
   isDefault: boolean;
 }

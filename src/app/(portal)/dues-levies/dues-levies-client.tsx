@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { Route } from 'next';
-import { AlertTriangle, BadgeCheck, CalendarClock, ChevronRight, Coins, IdCard, Plus, Search, Users } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, CalendarClock, ChevronRight, Coins, IdCard, Plus, Search, Settings2, Users } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -57,13 +57,17 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
   );
 
   const [duesDraft, setDuesDraft] = useState(d.monthlyDues ?? '');
+  const [duesOpen, setDuesOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [registerId, setRegisterId] = useState<string | null>(null);
   const [fineTarget, setFineTarget] = useState<{ charge: ChargeCollection; member: ChargeCollectionMember } | null>(null);
 
   const duesGate = useMoneyOutOtp<{ amount: string | null }>({
     perform: (extra, { amount }) => portalApi.setMonthlyDues(communityId, amount, extra),
-    onDone: refresh,
+    onDone: async () => {
+      setDuesOpen(false);
+      await refresh();
+    },
     successMessage: 'Monthly due updated',
   });
 
@@ -83,9 +87,21 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
         title="Dues & levies"
         subtitle="What every member is charged, and the code they are known by"
         actions={
-          <Button onClick={() => setCreating(true)} icon={<Plus className="h-4 w-4" />}>
-            New levy
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDuesDraft(d.monthlyDues ?? '');
+                setDuesOpen(true);
+              }}
+              icon={<Settings2 className="h-4 w-4" />}
+            >
+              Monthly dues
+            </Button>
+            <Button onClick={() => setCreating(true)} icon={<Plus className="h-4 w-4" />}>
+              New levy
+            </Button>
+          </>
         }
       />
 
@@ -164,39 +180,7 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
         )}
       </Card>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Monthly due"
-            subtitle="The standing cost of membership. Clear it to stop charging."
-          />
-          <div className="flex flex-wrap items-end gap-3 px-5 py-4">
-            <Field label="Amount (NGN)" className="w-44">
-              <Input
-                value={duesDraft}
-                onChange={(e) => setDuesDraft(e.target.value)}
-                inputMode="decimal"
-                placeholder="Not charged"
-                className="tnum"
-              />
-            </Field>
-            <Button
-              disabled={!duesDirty}
-              loading={duesGate.pending}
-              onClick={() =>
-                void duesGate.run({ amount: duesDraft.trim() === '' ? null : duesDraft.trim() })
-              }
-            >
-              {duesDirty ? 'Save' : 'Saved'}
-            </Button>
-            {duesDirty && (
-              <Button variant="ghost" size="sm" onClick={() => setDuesDraft(d.monthlyDues ?? '')}>
-                Discard
-              </Button>
-            )}
-          </div>
-        </Card>
-
+      <div className="mb-5">
         <Card>
           <CardHeader
             title="Member codes"
@@ -320,6 +304,75 @@ export function DuesLeviesClient({ initial }: { initial: DuesLeviesOverview }) {
           await refresh();
         }}
       />
+
+      <Modal
+        open={duesOpen}
+        onClose={() => {
+          if (duesGate.pending) return;
+          setDuesDraft(d.monthlyDues ?? '');
+          setDuesOpen(false);
+        }}
+        size="sm"
+        title="Monthly dues settings"
+        description="Set the standing amount every active member owes each month."
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              disabled={duesGate.pending}
+              onClick={() => {
+                setDuesDraft(d.monthlyDues ?? '');
+                setDuesOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!duesDirty}
+              loading={duesGate.pending}
+              onClick={() =>
+                void duesGate.run({ amount: duesDraft.trim() === '' ? null : duesDraft.trim() })
+              }
+            >
+              Save dues setting
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Current monthly due</p>
+            <p className="tnum mt-1 text-xl font-semibold text-navy-900">
+              {d.monthlyDues ? money(d.monthlyDues, 'NGN') : 'No monthly due'}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              This is charged to every active member and appears in collection tracking.
+            </p>
+          </div>
+          <Field label="New monthly amount (NGN)" hint="Enter the amount without commas.">
+            <Input
+              value={duesDraft}
+              onChange={(e) => setDuesDraft(e.target.value)}
+              inputMode="decimal"
+              placeholder="For example, 6000"
+              className="tnum"
+            />
+          </Field>
+          {d.monthlyDues && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={duesGate.pending || duesDraft === ''}
+              onClick={() => setDuesDraft('')}
+            >
+              Stop charging monthly dues
+            </Button>
+          )}
+          <Callout tone="info" title="Owner approval is required">
+            Saving this change sends an approval code to the community owner before it takes effect.
+          </Callout>
+        </div>
+      </Modal>
 
       <CollectionRegisterModal
         charge={selectedRegister}

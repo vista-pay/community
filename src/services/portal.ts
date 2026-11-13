@@ -43,6 +43,12 @@ import type {
   Opportunity,
   CommunityGroupRow,
   AjoJoinRequestRow,
+  ApprovalBucket,
+  ApprovalCounts,
+  ApprovalDetail,
+  ApprovalPolicyInput,
+  ApprovalPolicyOverview,
+  ApprovalRow,
   WelfareRequestDetail,
   WelfareRequestRow,
   Loan,
@@ -276,6 +282,40 @@ export const portalApi = {
     ),
   reviewAjoJoinRequest: (groupId: string, membershipId: string, approve: boolean) =>
     post<unknown>(`/ajo-groups/${groupId}/join-requests/${membershipId}`, { approve }),
+
+  // ───────────── Multi-level approval & authorisation ─────────────
+  //
+  // One queue for every sensitive operation in the platform. The module a
+  // request came from does not matter here: an officer works one list.
+
+  approvals: (communityId: string, bucket: ApprovalBucket = 'AWAITING_ME') =>
+    get<ApprovalRow[]>(path(communityId, '/approvals'), { bucket }),
+  approvalCounts: (communityId: string) =>
+    get<ApprovalCounts>(path(communityId, '/approvals/counts')),
+  approval: (communityId: string, requestId: string) =>
+    get<ApprovalDetail>(path(communityId, `/approvals/${requestId}`)),
+  /** Approve, decline, return for correction, or ask a question. */
+  decideApproval: (
+    communityId: string,
+    requestId: string,
+    body: { decision: string; comment?: string; pin?: string },
+  ) => post<ApprovalDetail>(path(communityId, `/approvals/${requestId}/decision`), body),
+  cancelApproval: (communityId: string, requestId: string, reason: string) =>
+    post<ApprovalDetail>(path(communityId, `/approvals/${requestId}/cancel`), { reason }),
+  executeApproval: (communityId: string, requestId: string, pin?: string) =>
+    post<ApprovalDetail>(path(communityId, `/approvals/${requestId}/execute`), { pin }),
+  addApprovalMessage: (
+    communityId: string,
+    requestId: string,
+    body: { text: string; attachmentUrl?: string; visibleToRequester?: boolean },
+  ) => post<unknown>(path(communityId, `/approvals/${requestId}/messages`), body),
+
+  approvalPolicies: (communityId: string) =>
+    get<ApprovalPolicyOverview>(path(communityId, '/approvals/policies')),
+  saveApprovalPolicy: (communityId: string, operation: string, body: ApprovalPolicyInput) =>
+    post<ApprovalPolicyOverview>(path(communityId, `/approvals/policies/${operation}`), body),
+  resetApprovalPolicy: (communityId: string, operation: string) =>
+    del<ApprovalPolicyOverview>(path(communityId, `/approvals/policies/${operation}`)),
 
   /** One member's signed agreement, as the PDF both parties hold. */
   ajoAgreementPdf: (groupId: string, membershipId: string) =>
@@ -723,9 +763,15 @@ export const portalApi = {
   merchantOverview: (communityId: string) =>
     get<MerchantOverview>(path(communityId, '/merchant/overview')),
 
-  /** The daily in/out series behind the merchant charts. 7–365 days. */
-  merchantFlows: (communityId: string, days = 30) =>
-    get<MerchantFlows>(path(communityId, `/merchant/flows?days=${days}`)),
+  /** The daily in/out series behind the merchant charts. 7–365 days or an inclusive custom range. */
+  merchantFlows: (
+    communityId: string,
+    range: number | { from: string; to: string } = 30,
+  ) =>
+    get<MerchantFlows>(
+      path(communityId, '/merchant/flows'),
+      typeof range === 'number' ? { days: range } : range,
+    ),
 
   /**
    * Contribution-pool movements, paged. Separate endpoint because it is
@@ -863,6 +909,8 @@ export const portalApi = {
       dayOfMonth?: number;
       minimumAmount?: string;
       holdHours?: number;
+      autoSettle?: boolean;
+      autoSettleCeiling?: string;
     },
     extra: MoneyOutExtra = {},
   ) => patch<PayoutSettingsData>(path(communityId, '/merchant/payout-settings'), { ...body, ...extra }),
@@ -884,6 +932,15 @@ export const portalApi = {
   settlementAccounts: (communityId: string) =>
     get<MerchantSettlementAccount[]>(path(communityId, '/merchant/settlement-accounts')),
 
+  /**
+   * All three take the owner's approval code.
+   *
+   * Registering, re-pointing and removing a payout account are each gated on
+   * the server — they decide where the community's money goes when it leaves
+   * Rendi, which is a larger decision than any single transfer. The `extra`
+   * is what the OTP gate folds in on the retry; without it the first call
+   * returns a challenge the screen has no way to answer.
+   */
   addSettlementAccount: (
     communityId: string,
     body: {
@@ -893,16 +950,25 @@ export const portalApi = {
       accountName: string;
       isDefault?: boolean;
     },
+    extra: MoneyOutExtra = {},
   ) =>
-    post<MerchantSettlementAccount>(path(communityId, '/merchant/settlement-accounts'), body),
+    post<MerchantSettlementAccount>(path(communityId, '/merchant/settlement-accounts'), {
+      ...body,
+      ...extra,
+    }),
 
-  makeSettlementAccountDefault: (communityId: string, accountId: string) =>
+  makeSettlementAccountDefault: (
+    communityId: string,
+    accountId: string,
+    extra: MoneyOutExtra = {},
+  ) =>
     patch<MerchantSettlementAccount>(
       path(communityId, `/merchant/settlement-accounts/${accountId}/default`),
+      extra,
     ),
 
-  removeSettlementAccount: (communityId: string, accountId: string) =>
-    del<unknown>(path(communityId, `/merchant/settlement-accounts/${accountId}`)),
+  removeSettlementAccount: (communityId: string, accountId: string, extra: MoneyOutExtra = {}) =>
+    del<unknown>(path(communityId, `/merchant/settlement-accounts/${accountId}`), extra),
 
   merchantPaymentLinks: (communityId: string) =>
     get<MerchantPaymentLink[]>(path(communityId, '/merchant/payment-links')),

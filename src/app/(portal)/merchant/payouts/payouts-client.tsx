@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Banknote,
@@ -17,6 +18,7 @@ import {
   Callout,
   Card,
   CardHeader,
+  Checkbox,
   DataTable,
   EmptyState,
   Field,
@@ -43,6 +45,7 @@ import type {
   WalletData,
 } from '@/types';
 import { BeneficiaryRow, SendPayout } from './send-payout';
+import { SettlementAccountsCard } from '@/components/merchant/settlement-accounts';
 
 type Tab = 'send' | 'payees' | 'settlement';
 
@@ -68,7 +71,11 @@ const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
   const communityId = useCommunityId();
   const { toast } = useToast();
-  const [tab, setTab] = useState<Tab>('send');
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(
+    requestedTab === 'payees' || requestedTab === 'settlement' ? requestedTab : 'send',
+  );
 
   const { data, refresh } = useQuery<PayoutSettingsData>(
     () => portalApi.payoutSettings(communityId),
@@ -102,6 +109,8 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
   const [dayOfMonth, setDayOfMonth] = useState(String(d.settings.dayOfMonth ?? 1));
   const [minimum, setMinimum] = useState(d.settings.minimumAmount);
   const [holdHours, setHoldHours] = useState(String(d.settings.holdHours));
+  const [autoSettle, setAutoSettle] = useState(d.settings.autoSettle);
+  const [ceiling, setCeiling] = useState(d.settings.autoSettleCeiling ?? '');
 
   const settingsGate = useMoneyOutOtp({
     perform: (extra) =>
@@ -115,6 +124,8 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
           dayOfMonth: schedule === 'MONTHLY' ? Number(dayOfMonth) : undefined,
           minimumAmount: minimum || '0',
           holdHours: Number(holdHours) || 0,
+          autoSettle: destination === 'BANK_ACCOUNT' ? autoSettle : false,
+          autoSettleCeiling: autoSettle && ceiling ? ceiling : undefined,
         },
         extra,
       ),
@@ -415,23 +426,58 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
                 </Field>
               </div>
 
-              {/* The schedule does fire — but only all the way for the
-                  wallet, and an officer who is not told that will assume
-                  their bank settlements are happening while they are not. */}
-              {schedule !== 'MANUAL' && toBank && (
-                <Callout tone="warning" title="A bank settlement still needs releasing by hand">
-                  On schedule we work out what is due and tell your officers, but we do not send it:
-                  a transfer out of the community&rsquo;s money needs the owner&rsquo;s approval
-                  code, and no automatic job can hold one. Settling without it would make that
-                  approval meaningless, so the amount waits here for someone to release.
-                </Callout>
-              )}
               {schedule !== 'MANUAL' && !toBank && (
                 <Callout tone="info" title="This runs on its own">
                   Collections are swept to the community&rsquo;s wallet on the schedule above
                   without anyone doing anything. Nothing leaves Rendi, so there is nothing to
                   approve and nothing to charge.
                 </Callout>
+              )}
+
+              {/* Automation, as a decision rather than a default.
+                  Sending to a bank is real money leaving, so the owner
+                  authorises the arrangement — destination, schedule and this
+                  switch together — instead of approving each run. What keeps
+                  it safe is that the destination is not free: an automatic run
+                  can only ever reach an account they already registered. */}
+              {schedule !== 'MANUAL' && toBank && (
+                <div className="space-y-4 rounded-xl border border-slate-200 p-4">
+                  <Checkbox
+                    checked={autoSettle}
+                    onChange={setAutoSettle}
+                    label="Send automatically, without anyone releasing it"
+                    description="On the schedule above, the amount due is transferred to the account you chose. Your officers are notified each time it goes."
+                  />
+                  {autoSettle ? (
+                    <>
+                      <Field
+                        label="Pause runs above"
+                        optional
+                        hint="Leave empty for no limit. A run over this waits for someone to release it by hand."
+                      >
+                        <Input
+                          inputMode="decimal"
+                          value={ceiling}
+                          onChange={(event) =>
+                            setCeiling(event.target.value.replace(/[^\d.]/g, ''))
+                          }
+                          placeholder="No limit"
+                          className="tnum"
+                        />
+                      </Field>
+                      <p className="text-[12.5px] leading-relaxed text-slate-500">
+                        Switching this on is itself owner-approved, and the approval message says
+                        so. Turn it off at any time and settlements go back to waiting for an
+                        officer.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[12.5px] leading-relaxed text-slate-500">
+                      With this off, the schedule still works out what is due and tells your
+                      officers — it just does not send it.
+                    </p>
+                  )}
+                </div>
               )}
 
               <div className="flex flex-wrap items-center gap-3">
@@ -448,6 +494,14 @@ export function PayoutsClient({ initial }: { initial: PayoutSettingsData }) {
               </div>
             </div>
           </Card>
+
+          {/* Registering the destination belongs on the screen that chooses
+              it. This card was written, typed and linted months ago and then
+              rendered nowhere, because at the time nothing consumed a
+              community payout account — which left the Configuration screen
+              telling officers to add one "under the Merchant wallet screen",
+              where no such button existed. */}
+          <SettlementAccountsCard accounts={d.accounts} onChanged={refresh} />
 
           <Card>
             <CardHeader

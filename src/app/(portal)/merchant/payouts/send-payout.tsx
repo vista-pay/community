@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ArrowUpRight, BadgeCheck, Landmark, Star, UserRound } from 'lucide-react';
 import {
   AmountInput,
@@ -68,12 +69,13 @@ export function SendPayout({
 }) {
   const communityId = useCommunityId();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [kind, setKind] = useState<Kind>('BANK');
   const [beneficiaryId, setBeneficiaryId] = useState('');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
-  const [expenseId, setExpenseId] = useState('');
+  const [expenseId, setExpenseId] = useState(searchParams.get('expenseId') ?? '');
   const [savePayee, setSavePayee] = useState(false);
   const [payeeLabel, setPayeeLabel] = useState('');
   // Which account the payment is charged to. SYSTEM means the general

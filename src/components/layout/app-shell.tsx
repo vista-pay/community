@@ -163,6 +163,7 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
           { href: '/accounting/statements', label: 'Statements', icon: FileSpreadsheet, countKey: 'accounting' },
         ],
       },
+      { href: '/expenses', label: 'Expenses', icon: ReceiptText, countKey: 'accounting' },
       // Its own section, not a corner of Accounting. Accounting is where an
       // officer reads the books; this is where they decide what members are
       // charged — a different job, done by different people, and one they
@@ -199,6 +200,9 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'Governance',
     items: [
+      // First in the group, and above the rest of Governance: when something
+      // is waiting on an officer it is the reason they opened the portal.
+      { href: '/approvals' as Route, label: 'Approvals', icon: ShieldCheck, countKey: 'approvals' },
       { href: '/governance', label: 'Meetings & votes', icon: CalendarDays, countKey: 'governance' },
       { href: '/communications', label: 'Communications', icon: MessagesSquare, countKey: 'communications' },
       { href: '/listing', label: 'Public listing', icon: Globe, countKey: 'listing' },

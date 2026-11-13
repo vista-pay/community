@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Banknote, HandCoins, Landmark, PiggyBank, RefreshCw, ScrollText, ShieldCheck } from 'lucide-react';
+import { SettlementAccountsCard } from '@/components/merchant/settlement-accounts';
+import { HandCoins, Landmark, PiggyBank, RefreshCw, ScrollText, ShieldCheck } from 'lucide-react';
 import {
   Badge,
   Button,
+  LinkButton,
   Callout,
   Card,
   CardHeader,
@@ -505,6 +507,20 @@ function PoliciesSection({
 
 // ───────────────────────────── Merchant & payouts ─────────────────────────────
 
+/**
+ * Payout accounts, managed here rather than pointed at.
+ *
+ * This section used to show the accounts and then send an officer to another
+ * screen to add one — a card that lists something but refuses to let you add
+ * to it, behind a button that navigates instead of acting. It is the same
+ * card Payouts & payees uses, so adding, making default and removing all work
+ * wherever an officer happens to be looking.
+ *
+ * The destination and schedule stay on Payouts & payees, because those are
+ * decisions about *runs* rather than about which accounts exist, and keeping
+ * them beside the settlement history is what stops a destination and the runs
+ * that use it drifting apart.
+ */
 function PayoutsSection({
   config,
   onSaved,
@@ -526,41 +542,23 @@ function PayoutsSection({
         </Callout>
       )}
 
+      <SettlementAccountsCard accounts={settlementAccounts} onChanged={onSaved} />
+
       <Card>
         <CardHeader
-          title="Payout accounts"
-          subtitle="The community's own bank accounts. The default is where money will go when it leaves Rendi."
+          title="Where collections settle"
+          subtitle="Which of these accounts money is swept to, how often, and whether it goes automatically."
         />
-        {settlementAccounts.length === 0 ? (
-          <EmptyState
-            icon={<Landmark className="h-5 w-5" />}
-            title="No payout account"
-            body="Add the community's own bank account under the Merchant wallet screen. Changes there are owner-approved too."
-            action={
-              <Button variant="secondary" onClick={() => void onSaved()} icon={<Banknote className="h-4 w-4" />}>
-                Refresh
-              </Button>
-            }
-          />
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {settlementAccounts.map((a) => (
-              <div key={a.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
-                <div className="min-w-[180px] flex-1">
-                  <p className="font-medium text-navy-900">{a.bankName}</p>
-                  <p className="tnum text-xs text-slate-500">
-                    {a.accountNumber} · {a.accountName}
-                  </p>
-                </div>
-                {a.isDefault && (
-                  <Badge tone="green" dot>
-                    Default
-                  </Badge>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <Landmark className="h-5 w-5 shrink-0 text-brand-600" />
+          <p className="min-w-[220px] flex-1 text-[13px] text-slate-600">
+            The destination and schedule live beside the settlement history, so what was chosen and
+            what actually ran are read together.
+          </p>
+          <LinkButton variant="secondary" href="/merchant/payouts">
+            Open payouts &amp; payees
+          </LinkButton>
+        </div>
       </Card>
 
       <Card>
