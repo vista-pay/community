@@ -265,6 +265,31 @@ export interface DashboardData {
 }
 
 
+
+// ───────────────────────── Account security ─────────────────────────
+
+/** The signed-in officer's own security state, not the community's. */
+export interface AccountSecurity {
+  /** Whether a transaction PIN has ever been set. */
+  hasPin: boolean;
+  /** Null for accounts whose PIN predates this being recorded. */
+  pinChangedAt: IsoDate | null;
+  biometricSignIn: boolean;
+  biometricsForPayments: boolean;
+  /** Challenge a sign-in from a device this account has not used before. */
+  confirmNewDevices: boolean;
+}
+
+export interface AccountSession {
+  id: string;
+  deviceId: string;
+  deviceName: string | null;
+  os: string | null;
+  lastActiveAt: IsoDate;
+  createdAt: IsoDate;
+  isCurrent: boolean;
+}
+
 // ───────────────── Multi-level approval & authorisation ─────────────────
 
 export type ApprovalCategory = 'FINANCIAL' | 'ACCOUNT_SETTINGS' | 'ADMIN_POLICY';
@@ -1388,6 +1413,24 @@ export interface Subscription {
   currentPeriodEnd: IsoDate;
   trialEndsAt: IsoDate | null;
   graceEndsAt: IsoDate | null;
+  cancelAtPeriodEnd: boolean;
+  cancelledAt: IsoDate | null;
+  autoRenew: boolean;
+  /** When access actually stops, for a subscription being cancelled. */
+  endsAt: IsoDate | null;
+  /** The limits and features in force for the period that was billed. */
+  entitlements: {
+    planCode: string | null;
+    maxMembers: number;
+    maxStaffSeats: number;
+    maxAjoGroups: number;
+    features: string[];
+    allowsApiAccess: boolean;
+  };
+  /** Where the charge comes from, named rather than assumed. */
+  billedTo: { source: 'COMMUNITY_WALLET'; description: string };
+  /** A plan change scheduled for the next renewal, if any. */
+  pendingPlan: (SubscriptionPlan & { effectiveAt: IsoDate | null }) | null;
   invoices?: Array<{
     id: string;
     invoiceNumber: string;

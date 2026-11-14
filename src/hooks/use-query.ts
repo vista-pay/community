@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
+import { readApprovalChallenge } from '@/lib/approval-challenge';
 
 export interface QueryState<T> {
   data: T | undefined;
@@ -133,6 +134,16 @@ export function useMutation<TArgs extends unknown[], TResult>(
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong';
+
+      // An action that went to the community's approval workflow is not a
+      // failure, and must not be reported as one. The API client has already
+      // announced it and the portal shell is showing what happens next, so
+      // the screen's own error handling stands down — otherwise every one of
+      // them would have to learn to recognise a 428.
+      if (err instanceof ApiError && readApprovalChallenge(err.status, err.body)) {
+        return null;
+      }
+
       setError(message);
       optionsRef.current.onError?.(message);
       return null;

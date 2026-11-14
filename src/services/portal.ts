@@ -43,6 +43,8 @@ import type {
   Opportunity,
   CommunityGroupRow,
   AjoJoinRequestRow,
+  AccountSecurity,
+  AccountSession,
   ApprovalBucket,
   ApprovalCounts,
   ApprovalDetail,
@@ -287,6 +289,24 @@ export const portalApi = {
   //
   // One queue for every sensitive operation in the platform. The module a
   // request came from does not matter here: an officer works one list.
+
+  // ───────────────────────── Account security ─────────────────────────
+  //
+  // The officer's own account, not the community's. Every officer has one,
+  // whatever their post, which is why these are not community-scoped.
+
+  accountSecurity: () => get<AccountSecurity>('/settings/security'),
+  updateAccountSecurity: (body: Partial<Pick<AccountSecurity, 'confirmNewDevices' | 'biometricSignIn' | 'biometricsForPayments'>>) =>
+    patch<AccountSecurity>('/settings/security', body),
+  /** Set a first transaction PIN, or change one (password required to change). */
+  setTransactionPin: (body: { pin: string; password?: string }) =>
+    post<{ message: string }>('/auth/set-pin', body),
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    post<{ message: string; signedOutEverywhere: boolean }>('/auth/change-password', body),
+  accountSessions: () =>
+    get<{ sessions: AccountSession[] }>('/settings/sessions'),
+  revokeOtherSessions: () =>
+    post<{ revoked: number }>('/settings/sessions/revoke-others'),
 
   approvals: (communityId: string, bucket: ApprovalBucket = 'AWAITING_ME') =>
     get<ApprovalRow[]>(path(communityId, '/approvals'), { bucket }),
@@ -749,8 +769,22 @@ export const portalApi = {
       { headers: { 'Idempotency-Key': idempotencyKey } },
     ),
 
-  cancelSubscription: (subscriptionId: string, reason: string) =>
-    post<Subscription>(`/community-subscriptions/${subscriptionId}/cancel`, { reason }),
+  /**
+   * Move an existing subscription to another plan. An upgrade or a trial
+   * applies at once; a downgrade waits for the period already paid for,
+   * unless `immediate` says otherwise.
+   */
+  changeSubscriptionPlan: (
+    subscriptionId: string,
+    body: { planId: string; immediate?: boolean },
+  ) => post<Subscription>(`/community-subscriptions/${subscriptionId}/change-plan`, body),
+  cancelScheduledPlanChange: (subscriptionId: string) =>
+    del<Subscription>(`/community-subscriptions/${subscriptionId}/change-plan`),
+  cancelSubscription: (subscriptionId: string, reason: string, immediate = false) =>
+    post<Subscription>(`/community-subscriptions/${subscriptionId}/cancel`, {
+      reason,
+      immediate,
+    }),
 
   // ───────────────────────── Notifications & settings ─────────────────────────
 

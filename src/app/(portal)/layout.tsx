@@ -5,6 +5,7 @@ import { AppShell } from '@/components/layout/app-shell';
 import { SessionProvider } from '@/components/providers/session-provider';
 import { NoWorkspace } from '@/components/layout/no-workspace';
 import { loadSession } from '@/server/portal-data';
+import { ApprovalSubmittedDialog } from '@/components/approval-submitted';
 
 /**
  * Every portal page renders inside this. The session is read once here, on
@@ -28,6 +29,9 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   return (
     <SessionProvider session={session}>
       <AppShell>{children}</AppShell>
+      {/* Any action on any screen can be sent to the officers; this is where
+          the officer who sent it is told what happens next. */}
+      <ApprovalSubmittedDialog />
     </SessionProvider>
   );
 }

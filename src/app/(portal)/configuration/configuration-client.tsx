@@ -18,6 +18,7 @@ import {
   Select,
   Tabs,
   Toggle,
+  Textarea,
 } from '@/components/ui';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
@@ -365,6 +366,20 @@ function FeesSection({
 
 // ───────────────────────────── Service policies ─────────────────────────────
 
+/**
+ * What to write, per policy. The prompts came across with the editor from
+ * Settings — an empty textarea labelled "Policy terms" tells an officer
+ * nothing about what their members need to be told.
+ */
+const POLICY_PLACEHOLDER: Record<string, string> = {
+  JOINING: 'Who can join, documents required, joining fee, approval timeline, exit conditions…',
+  CONTRIBUTIONS: 'Contribution schedule, payment deadline, grace period, late fee, refunds…',
+  SAVINGS: 'Minimum balance, withdrawal notice, interest calculation, closure rules…',
+  LOANS: 'Eligibility period, maximum loan, guarantors, interest, tenor, default actions…',
+  WELFARE: 'Covered situations, evidence required, support cap, review and payment process…',
+  OPPORTUNITIES: 'Who qualifies, how selection works, closing dates, fees and participation rules…',
+};
+
 function PoliciesSection({
   config,
   onSaved,
@@ -392,6 +407,14 @@ function PoliciesSection({
   const [published, setPublished] = useState<Record<string, boolean>>(
     Object.fromEntries(policies.map((p) => [p.area, p.isPublished])),
   );
+  /**
+   * The policy's own words, which used to be edited on a second screen in
+   * Settings while the numbers were edited here. One policy, two places to
+   * change it, and no indication on either that the other existed.
+   */
+  const [terms, setTerms] = useState<Record<string, string>>(
+    Object.fromEntries(policies.map((p) => [p.area, p.content ?? ''])),
+  );
 
   const gate = useMoneyOutOtp<{ area: string }>({
     perform: (extra, { area }) => {
@@ -400,7 +423,7 @@ function PoliciesSection({
         communityId,
         {
           area: policy.area,
-          content: policy.content,
+          content: terms[area] ?? policy.content ?? '',
           rules: drafts[area],
           isPublished: published[area] ?? false,
         },
@@ -418,7 +441,7 @@ function PoliciesSection({
           <EmptyState
             icon={<ScrollText className="h-5 w-5" />}
             title="No policies yet"
-            body="Draft the joining, contribution, savings and loan policies under Settings; their numeric rules are then editable here."
+            body="Policies appear here once your community has services to govern. Each one carries its terms in words and its rules in numbers."
           />
         </Card>
       ) : (
@@ -427,7 +450,8 @@ function PoliciesSection({
           const originalRules = p.area === 'LOANS' ? { ...loanDefaults, ...p.rules } : p.rules;
           const dirty =
             JSON.stringify(draft) !== JSON.stringify(originalRules) ||
-            (published[p.area] ?? false) !== p.isPublished;
+            (published[p.area] ?? false) !== p.isPublished ||
+            (terms[p.area] ?? '') !== (p.content ?? '');
           const entries = Object.entries(draft);
           return (
             <Card key={p.area}>
@@ -457,6 +481,23 @@ function PoliciesSection({
                   </>
                 }
               />
+              <div className="px-5 pt-4">
+                <Field
+                  label="Policy terms"
+                  htmlFor={`policy-terms-${p.area}`}
+                  hint="What members read before they join or use this service. Published policies appear in the app; drafts stay with officers."
+                >
+                  <Textarea
+                    id={`policy-terms-${p.area}`}
+                    rows={4}
+                    value={terms[p.area] ?? ''}
+                    placeholder={POLICY_PLACEHOLDER[p.area] ?? 'Set out the rules in plain words.'}
+                    onChange={(e) =>
+                      setTerms((current) => ({ ...current, [p.area]: e.target.value }))
+                    }
+                  />
+                </Field>
+              </div>
               {entries.length === 0 ? (
                 <p className="px-5 py-4 text-[13px] text-slate-500">
                   This policy carries no numeric rules yet.

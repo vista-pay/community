@@ -6,6 +6,8 @@
  * there is no token here to steal and no CORS surface to widen.
  */
 
+import { publishApprovalChallenge, readApprovalChallenge } from './approval-challenge';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -72,10 +74,32 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 
   if (!res.ok) {
     const message = json?.message ?? json?.error ?? `Request failed (${res.status})`;
-    throw new ApiError(Array.isArray(message) ? message.join(', ') : message, res.status, json);
+    const error = new ApiError(
+      Array.isArray(message) ? message.join(', ') : message,
+      res.status,
+      json,
+    );
+
+    // An action that went to the community's officers did not fail — it was
+    // recorded and is waiting on them. Announced centrally so every screen
+    // reports it correctly without each one having to recognise a 428, and
+    // still thrown, because the caller must stop either way.
+    const challenge = readApprovalChallenge(res.status, json);
+    if (challenge) publishApprovalChallenge(challenge);
+
+    throw error;
   }
 
-  return (json?.data ?? json) as T;
+  // The envelope is detected by its key, not by the truthiness of what is
+  // inside it. `data: null` is a legitimate answer — "no settlement account
+  // configured", "nothing due" — and `json?.data ?? json` hands the caller
+  // the envelope itself in that case. The envelope is a truthy object, so it
+  // sails past every `if (!data)` guard and then throws the moment a screen
+  // reads a field off it. That is what took the payouts page down.
+  if (json && typeof json === 'object' && 'data' in json) {
+    return (json as { data: T }).data;
+  }
+  return json as T;
 }
 
 export const get = <T,>(path: string, params?: Params) => api<T>(path, { params });

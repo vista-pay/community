@@ -136,10 +136,21 @@ export function PayoutsClient({ initial }: { initial?: PayoutSettingsData }) {
     [communityId],
   );
 
-  const d = data ?? initial ?? NOTHING_LOADED;
+  // Shape-checked, not just null-checked. Everything below reads
+  // `d.settings.*` and `d.summary.*`, so a payload that arrives without them
+  // — a changed API, a half-applied migration, an envelope slipping through —
+  // throws during render and takes the whole route down with it. On the one
+  // screen an officer opens to fix a money problem, degrading to "we could
+  // not load this, try again" is the only acceptable failure.
+  const usable = (value: PayoutSettingsData | undefined) =>
+    value && typeof value === 'object' && 'settings' in value && 'summary' in value
+      ? value
+      : undefined;
+  const loaded = usable(data) ?? usable(initial);
+  const d = loaded ?? NOTHING_LOADED;
   // Nothing on screen is real yet. Said once, at the top, rather than letting
   // an officer read zeroes as fact.
-  const unavailable = !data && !initial;
+  const unavailable = !loaded;
   const summary = d.summary;
   const beneficiaries = payees ?? [];
   const ngnAccount =

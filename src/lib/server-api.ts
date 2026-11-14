@@ -76,7 +76,16 @@ export async function apiServer<T>(
     throw new ApiError(Array.isArray(message) ? message.join(', ') : message, res.status, json);
   }
 
-  return (json?.data ?? json) as T;
+  // The envelope is detected by its key, not by the truthiness of what is
+  // inside it. `data: null` is a legitimate answer — "no settlement account
+  // configured", "nothing due" — and `json?.data ?? json` hands the caller
+  // the envelope itself in that case. The envelope is a truthy object, so it
+  // sails past every `if (!data)` guard and then throws the moment a screen
+  // reads a field off it. That is what took the payouts page down.
+  if (json && typeof json === 'object' && 'data' in json) {
+    return (json as { data: T }).data;
+  }
+  return json as T;
 }
 
 /**

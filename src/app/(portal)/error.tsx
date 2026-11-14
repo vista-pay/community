@@ -52,11 +52,25 @@ export default function PortalError({
         </Link>
       </div>
 
-      {error.digest && (
-        <p className="mt-6 font-mono text-[11.5px] text-slate-400">
-          Reference {error.digest}
-        </p>
-      )}
+      {/*
+        A digest means the failure was on the server and Next has withheld the
+        detail; the reference is all there is to go on. Without one it failed
+        in the browser, where the message is already in the console and
+        withholding it from the officer helps nobody — it is the one line
+        support needs, and they are the only person who can send it.
+      */}
+      {error.digest ? (
+        <p className="mt-6 font-mono text-[11.5px] text-slate-400">Reference {error.digest}</p>
+      ) : error.message ? (
+        <details className="mt-6 w-full text-left">
+          <summary className="cursor-pointer text-center text-[11.5px] text-slate-400">
+            Technical detail
+          </summary>
+          <p className="mt-2 break-words rounded-lg bg-slate-50 p-3 font-mono text-[11.5px] text-slate-500">
+            {error.message}
+          </p>
+        </details>
+      ) : null}
     </div>
   );
 }

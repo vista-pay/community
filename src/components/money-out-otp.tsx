@@ -6,6 +6,7 @@ import { Button, Callout, Field, Input, Modal } from '@/components/ui';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/components/providers/toast-provider';
 import { money } from '@/lib/format';
+import { approvalChallengeFrom } from '@/components/approval-submitted';
 
 /**
  * Discriminator the API sets on the 428 that asks for the owner's code.
@@ -122,6 +123,11 @@ export function useMoneyOutOtp<P = void>({
           setChallenge(next);
           return;
         }
+        // Already announced centrally, with the sequence of officers it now
+        // needs. Reporting it here as well — and as a failure — is how an
+        // officer comes to read their own community's controls as a fault.
+        if (approvalChallengeFrom(error)) return;
+
         toast(
           'Could not complete',
           'error',
