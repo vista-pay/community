@@ -23,6 +23,7 @@ import { date, money } from '@/lib/format';
 import { portalApi } from '@/services/portal';
 import type { BookAccount, CashAccount, Expense, ExpenseStatus } from '@/types';
 import { ExpenseModal } from '../accounting/expense-modal';
+import { CashAccountModal } from '../accounting/cash-account-modal';
 
 type View = 'all' | 'pending' | 'approved' | 'paid';
 
@@ -40,6 +41,15 @@ export function ExpensesClient({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>('all');
   const expenses = useQuery(() => portalApi.expenses(communityId), [communityId], { initial });
+  /**
+   * Live, not the server render it arrived with. An account added from this
+   * screen — or from Banking in another tab — has to appear in "Paid from"
+   * without the officer reloading the page to find out whether it worked.
+   */
+  const cash = useQuery(() => portalApi.cashAccounts(communityId), [communityId], {
+    initial: cashAccounts,
+  });
+  const [addingAccount, setAddingAccount] = useState(false);
 
   const review = useMutation(
     ({ id, decision }: { id: string; decision: 'APPROVE' | 'REJECT' }) =>
@@ -157,11 +167,27 @@ export function ExpensesClient({
         />
       </Card>
 
+      <CashAccountModal
+        open={addingAccount}
+        accounts={accounts}
+        communityId={communityId}
+        onClose={() => setAddingAccount(false)}
+        onCreated={async () => {
+          await cash.refresh();
+          setAddingAccount(false);
+          setOpen(true);
+        }}
+      />
+
       <ExpenseModal
         open={open}
         onClose={() => setOpen(false)}
         accounts={accounts}
-        cashAccounts={cashAccounts}
+        cashAccounts={cash.data ?? cashAccounts}
+        onAddCashAccount={() => {
+          setOpen(false);
+          setAddingAccount(true);
+        }}
         communityId={communityId}
         onCreated={expenses.refresh}
       />

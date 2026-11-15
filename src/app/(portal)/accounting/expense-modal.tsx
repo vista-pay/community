@@ -21,6 +21,13 @@ export function ExpenseModal(props: {
   cashAccounts: CashAccount[];
   communityId: string;
   onCreated: () => Promise<void>;
+  /**
+   * Offered beside "Paid from" when the community has registered nothing to
+   * pay from. The officer notices the gap here, so this is where the way out
+   * of it belongs — sending them off to find another screen is how a form
+   * gets abandoned.
+   */
+  onAddCashAccount?: () => void;
 }) {
   if (!props.open) return null;
   return <ExpenseForm {...props} />;
@@ -33,6 +40,7 @@ function ExpenseForm({
   cashAccounts,
   communityId,
   onCreated,
+  onAddCashAccount,
 }: {
   open: boolean;
   onClose: () => void;
@@ -40,6 +48,7 @@ function ExpenseForm({
   cashAccounts: CashAccount[];
   communityId: string;
   onCreated: () => Promise<void>;
+  onAddCashAccount?: () => void;
 }) {
   const { toast } = useToast();
   const [expenseDate, setExpenseDate] = useState(today);
@@ -129,7 +138,7 @@ function ExpenseForm({
           hint={
             cashAccounts.length
               ? 'Leave it on "Decide later" if the account is not settled yet'
-              : 'None registered yet — add one under Accounting → Banking to name which account pays'
+              : undefined
           }
         >
           <Select id="ex-paid-from" value={paidFromId} onChange={(e) => setPaidFromId(e.target.value)}>
@@ -140,6 +149,22 @@ function ExpenseForm({
               </option>
             ))}
           </Select>
+          {cashAccounts.length === 0 && (
+            <p className="mt-1.5 text-[13px] text-slate-500">
+              No accounts registered, so there is nothing to pay from yet.{' '}
+              {onAddCashAccount ? (
+                <button
+                  type="button"
+                  onClick={onAddCashAccount}
+                  className="font-semibold text-brand-700 underline underline-offset-2"
+                >
+                  Add one now
+                </button>
+              ) : (
+                <>Add one under Accounting → Banking.</>
+              )}
+            </p>
+          )}
         </Field>
 
         <Checkbox
