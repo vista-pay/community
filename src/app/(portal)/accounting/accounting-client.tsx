@@ -49,6 +49,7 @@ import type {
 import { JournalModal } from './journal-modal';
 import { ExpenseModal } from './expense-modal';
 import { ReconcileModal } from './reconcile-modal';
+import { CashAccountModal } from './cash-account-modal';
 import { ModuleAccounting } from '@/components/accounting/module-accounting';
 import { ProfitAndLoss } from '@/components/accounting/profit-and-loss';
 import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
@@ -92,6 +93,7 @@ export function AccountingClient({ initial }: { initial: Initial }) {
   const [journalOpen, setJournalOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [reconciling, setReconciling] = useState<CashAccount | null>(null);
+  const [addingCashAccount, setAddingCashAccount] = useState(false);
   const [reversing, setReversing] = useState<JournalEntry | null>(null);
   const [closingPeriod, setClosingPeriod] = useState<AccountingPeriod | null>(null);
 
@@ -282,6 +284,7 @@ export function AccountingClient({ initial }: { initial: Initial }) {
             accounts={cash.data ?? []}
             loading={cash.loading}
             onReconcile={setReconciling}
+            onAdd={() => setAddingCashAccount(true)}
           />
         )}
 
@@ -319,6 +322,14 @@ export function AccountingClient({ initial }: { initial: Initial }) {
         cashAccounts={cash.data ?? []}
         communityId={communityId}
         onCreated={expenses.refresh}
+      />
+
+      <CashAccountModal
+        open={addingCashAccount}
+        accounts={accounts}
+        communityId={communityId}
+        onClose={() => setAddingCashAccount(false)}
+        onCreated={cash.refresh}
       />
 
       <ReconcileModal
@@ -652,10 +663,12 @@ function BankingTab({
   accounts,
   loading,
   onReconcile,
+  onAdd,
 }: {
   accounts: CashAccount[];
   loading: boolean;
   onReconcile: (account: CashAccount) => void;
+  onAdd: () => void;
 }) {
   if (!loading && accounts.length === 0) {
     return (
@@ -663,14 +676,21 @@ function BankingTab({
         <EmptyState
           icon={<Landmark className="h-5 w-5" />}
           title="No bank accounts yet"
-          body="Add the account your community actually banks with, then reconcile it against your statement."
+          body="Add the account your community actually banks with, then reconcile it against your statement. Until one is here, an expense cannot say which account paid it."
+          action={<Button onClick={onAdd}>Add an account</Button>}
         />
       </Card>
     );
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={onAdd}>
+          Add an account
+        </Button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
       {accounts.map((a) => (
         <Card key={a.id}>
           <CardHeader
@@ -698,7 +718,8 @@ function BankingTab({
             </Button>
           </div>
         </Card>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

@@ -850,12 +850,25 @@ export interface Statements {
   balanceSheet: { assets: Money; liabilities: Money; equity: Money; surplus: Money };
 }
 
+/** Bank account, cash box, or money in transit between the two. */
+export type CashAccountKind = 'BANK' | 'CASH' | 'CLEARING';
+
+export interface CashAccountInput {
+  name: string;
+  institution: string;
+  /** Typed in full so the officer can check it; only the last four are kept. */
+  accountNumber: string;
+  kind: CashAccountKind;
+  /** The asset account in the chart that this cash posts to. */
+  ledgerCode: string;
+}
+
 export interface CashAccount {
   id: string;
   name: string;
   institution: string;
   maskedNumber: string;
-  kind: 'BANK' | 'CASH' | 'CLEARING';
+  kind: CashAccountKind;
   ledgerCode: string;
   bookBalance: Money;
   statementBalance: Money;

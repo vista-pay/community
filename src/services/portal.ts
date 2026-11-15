@@ -24,6 +24,7 @@ import type {
   Broadcast,
   BudgetLine,
   CashAccount,
+  CashAccountInput,
   CoaChoice,
   CoaOptions,
   CoaSelectionKey,
@@ -435,7 +436,7 @@ export const portalApi = {
   cashAccounts: (communityId: string) =>
     get<CashAccount[]>(path(communityId, '/accounting/cash-accounts')),
 
-  createCashAccount: (communityId: string, body: Record<string, unknown>) =>
+  createCashAccount: (communityId: string, body: CashAccountInput) =>
     post<unknown>(path(communityId, '/accounting/cash-accounts'), body),
 
   reconcile: (

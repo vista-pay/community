@@ -126,7 +126,11 @@ function ExpenseForm({
         <Field
           label="Paid from"
           htmlFor="ex-paid-from"
-          hint={cashAccounts.length ? undefined : 'Add a bank account first to record payment later'}
+          hint={
+            cashAccounts.length
+              ? 'Leave it on "Decide later" if the account is not settled yet'
+              : 'None registered yet — add one under Accounting → Banking to name which account pays'
+          }
         >
           <Select id="ex-paid-from" value={paidFromId} onChange={(e) => setPaidFromId(e.target.value)}>
             <option value="">Decide later</option>
