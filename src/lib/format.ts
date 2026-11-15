@@ -42,9 +42,24 @@ export function money(
 
 export const num = (n: number) => n.toLocaleString('en-NG');
 
-export function date(d: string | Date, style: 'short' | 'long' | 'time' | 'datetime' = 'short') {
+/**
+ * A date, or an em dash when there isn't one.
+ *
+ * Null and undefined are accepted deliberately, even where a type says they
+ * cannot happen. A field the API stopped sending — or never sent — used to
+ * reach `undefined.getTime()` here and throw, and a throw inside a formatter
+ * does not degrade one cell: it unmounts the route. That is how the
+ * settlement tab 500'd on a payload whose accounts carried no `createdAt`.
+ * Nothing is worth less than a timestamp, and nothing costs more than the
+ * screen an officer opens to fix a money problem.
+ */
+export function date(
+  d: string | Date | null | undefined,
+  style: 'short' | 'long' | 'time' | 'datetime' = 'short',
+) {
+  if (d === null || d === undefined) return '—';
   const x = typeof d === 'string' ? new Date(d) : d;
-  if (Number.isNaN(x.getTime())) return '—';
+  if (!(x instanceof Date) || Number.isNaN(x.getTime())) return '—';
   if (style === 'time') return x.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   if (style === 'datetime')
     return x.toLocaleString('en-GB', {
