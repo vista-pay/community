@@ -51,11 +51,11 @@ export function ChatThread({
   }, [messages.length]);
 
   if (messages.length === 0 && emptyState) {
-    return <div className={cn('flex-1 overflow-y-auto px-5 py-4', className)}>{emptyState}</div>;
+    return <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-4', className)}>{emptyState}</div>;
   }
 
   return (
-    <div ref={scroller} className={cn('flex-1 space-y-2 overflow-y-auto px-4 py-4', className)}>
+    <div ref={scroller} className={cn('min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4', className)}>
       {messages.map((message, index) => {
         // The author is named once per run, not on every bubble — a back and
         // forth of six messages should read as two voices, not twelve labels.

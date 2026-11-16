@@ -119,13 +119,13 @@ export function AccountOfficerClient({ initial }: { initial: AccountOfficerCard 
   }
 
   return (
-    <div>
+    <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden lg:h-[calc(100dvh-8rem)]">
       <PageHeader
         title="Account officer"
         subtitle="Your named contact at Rendi — questions here go to a person who knows this community"
       />
 
-      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[320px_1fr]">
         <Card className="self-start">
           <CardHeader title="Your contact" />
           <div className="px-5 py-4">
@@ -154,7 +154,7 @@ export function AccountOfficerClient({ initial }: { initial: AccountOfficerCard 
           </div>
         </Card>
 
-        <Card className="flex min-h-[460px] flex-col">
+        <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader
             title="Conversation"
             subtitle="Everyone with access to this portal sees and can write in this thread"
