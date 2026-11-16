@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { Headset, Paperclip, Send, X } from 'lucide-react';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
+import { useRealtimeEvent } from '@/hooks/use-realtime';
 import { portalApi } from '@/services/portal';
 import { Avatar, Button, Callout, Card, CardHeader, EmptyState, PageHeader, Skeleton } from '@/components/ui';
 import { ChatThread } from '@/components/chat-thread';
@@ -34,10 +35,26 @@ export function AccountOfficerClient({ initial }: { initial: AccountOfficerCard 
     data: thread,
     loading: threadLoading,
     setData: setThread,
+    refresh: refreshThread,
   } = useQuery<{ messages: AccountOfficerMessage[] } | null>(
     () => (communityId && enabled ? portalApi.accountOfficerThread(communityId) : Promise.resolve(null)),
     [communityId, enabled],
     { enabled: Boolean(communityId) && enabled },
+  );
+
+  /**
+   * The officer replied — pull the thread again.
+   *
+   * Refetched rather than appended from the socket: the event carries no
+   * message body on purpose, so what arrives on screen has been through the
+   * same authorization as every other read.
+   */
+  useRealtimeEvent(
+    'account-officer.message',
+    (payload) => {
+      if (!payload.communityId || payload.communityId === communityId) void refreshThread();
+    },
+    Boolean(communityId) && enabled,
   );
 
   const [draft, setDraft] = useState('');
@@ -156,7 +173,13 @@ export function AccountOfficerClient({ initial }: { initial: AccountOfficerCard 
                 // This community's own officers write on the right; Rendi
                 // answers on the left.
                 mine: !message.fromOfficer,
-                author: message.fromOfficer ? `${message.author} · Rendi` : message.author,
+                // The API already decides what the community may see: their
+                // named officer, or plain "Rendi". Appending the suffix
+                // unconditionally produced "Rendi · Rendi".
+                author:
+                  message.fromOfficer && message.author !== 'Rendi'
+                    ? `${message.author} · Rendi`
+                    : message.author,
                 attachments: message.attachments,
               }))}
               emptyState={

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { SettlementAccountsCard } from '@/components/merchant/settlement-accounts';
-import { HandCoins, Landmark, PiggyBank, RefreshCw, ScrollText, ShieldCheck } from 'lucide-react';
+import { HandCoins, Landmark, PiggyBank, RefreshCw, ShieldCheck } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -24,7 +24,7 @@ import { MoneyOutOtpDialog, useMoneyOutOtp } from '@/components/money-out-otp';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import { humanise } from '@/lib/format';
+import { date, humanise } from '@/lib/format';
 import type { CommunityConfiguration } from '@/types';
 
 type Tab = 'fees' | 'policies' | 'payouts';
@@ -389,20 +389,15 @@ function PoliciesSection({
 }) {
   const communityId = useCommunityId();
   const { policies } = config.servicePolicies;
-  const loanDefaults: Record<string, string | number | boolean> = {
-    minimumMembershipMonths: 0,
-    minimumSavingsBalance: 0,
-    minimumContributionMonths: 0,
-    maxLoanToSavingsRatio: 2,
-    maximumActiveLoans: 1,
-    guarantorsRequired: 0,
-    requiredKycTier: 'TIER_1',
-    noOverdueContributions: true,
-  };
+
+  /**
+   * Starting values come from the server, which merges what was stored over
+   * the defaults for every rule the area supports. The client used to carry
+   * its own defaults for loans and nothing for the other five areas, so a
+   * policy that had never been saved offered no rules to set.
+   */
   const [drafts, setDrafts] = useState<Record<string, Record<string, string | number | boolean>>>(
-    Object.fromEntries(
-      policies.map((p) => [p.area, p.area === 'LOANS' ? { ...loanDefaults, ...p.rules } : { ...p.rules }]),
-    ),
+    Object.fromEntries(policies.map((p) => [p.area, { ...p.rules }])),
   );
   const [published, setPublished] = useState<Record<string, boolean>>(
     Object.fromEntries(policies.map((p) => [p.area, p.isPublished])),
@@ -431,116 +426,135 @@ function PoliciesSection({
       );
     },
     onDone: onSaved,
-    successMessage: 'Policy updated',
+    successMessage: 'Policy saved',
   });
 
   return (
     <div className="space-y-5">
-      {policies.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<ScrollText className="h-5 w-5" />}
-            title="No policies yet"
-            body="Policies appear here once your community has services to govern. Each one carries its terms in words and its rules in numbers."
-          />
-        </Card>
-      ) : (
-        policies.map((p) => {
-          const draft = drafts[p.area] ?? {};
-          const originalRules = p.area === 'LOANS' ? { ...loanDefaults, ...p.rules } : p.rules;
-          const dirty =
-            JSON.stringify(draft) !== JSON.stringify(originalRules) ||
-            (published[p.area] ?? false) !== p.isPublished ||
-            (terms[p.area] ?? '') !== (p.content ?? '');
-          const entries = Object.entries(draft);
-          return (
-            <Card key={p.area}>
-              <CardHeader
-                title={humanise(p.area)}
-                subtitle={`Version ${p.version}`}
-                action={
-                  <>
-                    <Toggle
-                      checked={published[p.area] ?? false}
-                      label={`Publish ${humanise(p.area)} policy`}
-                      onChange={(next) =>
-                        setPublished((current) => ({ ...current, [p.area]: next }))
-                      }
-                    />
-                    <Badge tone={(published[p.area] ?? false) ? 'green' : 'amber'}>
-                      {(published[p.area] ?? false) ? 'Published' : 'Draft'}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      disabled={!dirty}
-                      loading={gate.pending}
-                      onClick={() => void gate.run({ area: p.area })}
-                    >
-                      {dirty ? 'Save' : 'Saved'}
-                    </Button>
-                  </>
-                }
-              />
-              <div className="px-5 pt-4">
-                <Field
-                  label="Policy terms"
-                  htmlFor={`policy-terms-${p.area}`}
-                  hint="What members read before they join or use this service. Published policies appear in the app; drafts stay with officers."
-                >
-                  <Textarea
-                    id={`policy-terms-${p.area}`}
-                    rows={4}
-                    value={terms[p.area] ?? ''}
-                    placeholder={POLICY_PLACEHOLDER[p.area] ?? 'Set out the rules in plain words.'}
-                    onChange={(e) =>
-                      setTerms((current) => ({ ...current, [p.area]: e.target.value }))
-                    }
+      <Callout tone="info" title="Every service your community can govern is listed here">
+        A policy starts as a draft that only officers see. Write its terms, set its rules, then
+        publish it when members should be held to it. Saving is what brings a policy into being —
+        and like everything on this page, it needs the owner&rsquo;s code.
+      </Callout>
+
+      {policies.map((p) => {
+        const draft = drafts[p.area] ?? {};
+        const dirty =
+          !p.exists ||
+          JSON.stringify(draft) !== JSON.stringify(p.rules) ||
+          (published[p.area] ?? false) !== p.isPublished ||
+          (terms[p.area] ?? '') !== (p.content ?? '');
+        // Rendered from what the area may set, not from what it happens to
+        // have set already — otherwise a policy nobody has written yet shows
+        // no rules and cannot be given any.
+        const definitions = Object.entries(p.ruleDefinitions ?? {});
+        const written = terms[p.area]?.trim() ?? '';
+
+        return (
+          <Card key={p.area}>
+            <CardHeader
+              title={humanise(p.area)}
+              subtitle={
+                p.exists
+                  ? `Version ${p.version}${p.updatedAt ? ` · updated ${date(p.updatedAt)}` : ''}`
+                  : 'Not set yet'
+              }
+              action={
+                <>
+                  <Toggle
+                    checked={published[p.area] ?? false}
+                    label={`Publish ${humanise(p.area)} policy`}
+                    onChange={(next) => setPublished((current) => ({ ...current, [p.area]: next }))}
                   />
-                </Field>
-              </div>
-              {entries.length === 0 ? (
-                <p className="px-5 py-4 text-[13px] text-slate-500">
-                  This policy carries no numeric rules yet.
+                  <Badge
+                    tone={!p.exists ? 'slate' : (published[p.area] ?? false) ? 'green' : 'amber'}
+                  >
+                    {!p.exists ? 'Not set' : (published[p.area] ?? false) ? 'Published' : 'Draft'}
+                  </Badge>
+                  <Button
+                    size="sm"
+                    disabled={!dirty}
+                    loading={gate.pending}
+                    onClick={() => void gate.run({ area: p.area })}
+                  >
+                    {p.exists ? (dirty ? 'Save' : 'Saved') : 'Create policy'}
+                  </Button>
+                </>
+              }
+            />
+            <div className="px-5 pt-4">
+              <Field
+                label="Policy terms"
+                htmlFor={`policy-terms-${p.area}`}
+                hint="What members read before they join or use this service. Published policies appear in the app; drafts stay with officers."
+              >
+                <Textarea
+                  id={`policy-terms-${p.area}`}
+                  rows={4}
+                  value={terms[p.area] ?? ''}
+                  placeholder={POLICY_PLACEHOLDER[p.area] ?? 'Set out the rules in plain words.'}
+                  onChange={(e) => setTerms((current) => ({ ...current, [p.area]: e.target.value }))}
+                />
+              </Field>
+              {/* Publishing empty terms would show members a blank policy. */}
+              {(published[p.area] ?? false) && !written && (
+                <p className="mt-2 text-[12.5px] text-amber-700">
+                  This policy has no terms written. Members would see the rules below and nothing
+                  explaining them.
                 </p>
-              ) : (
-                <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {entries.map(([key, value]) =>
-                    typeof value === 'boolean' ? (
-                      <Toggle
-                        key={key}
-                        checked={value}
-                        label={humanise(key)}
-                        onChange={(next) =>
-                          setDrafts((c) => ({ ...c, [p.area]: { ...c[p.area], [key]: next } }))
-                        }
-                      />
-                    ) : (
-                      <Field key={key} label={humanise(key)}>
-                        <Input
-                          value={String(value)}
-                          onChange={(e) =>
-                            setDrafts((c) => ({
-                              ...c,
-                              [p.area]: {
-                                ...c[p.area],
-                                // Kept as typed; the API validates the shape
-                                // and rejects what it cannot use.
-                                [key]: typeof value === 'number' ? Number(e.target.value) : e.target.value,
-                              },
-                            }))
-                          }
-                          inputMode={typeof value === 'number' ? 'decimal' : 'text'}
-                          className={typeof value === 'number' ? 'tnum' : undefined}
-                        />
-                      </Field>
-                    ),
-                  )}
-                </div>
               )}
-            </Card>
-          );
-        })
-      )}
+            </div>
+
+            <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
+              {definitions.map(([key, definition]) => {
+                const value = draft[key] ?? definition.default;
+                const set = (next: string | number | boolean) =>
+                  setDrafts((c) => ({ ...c, [p.area]: { ...c[p.area], [key]: next } }));
+
+                if (definition.type === 'boolean') {
+                  return (
+                    <Toggle
+                      key={key}
+                      checked={Boolean(value)}
+                      label={definition.label}
+                      onChange={set}
+                    />
+                  );
+                }
+                if (definition.type === 'enum') {
+                  return (
+                    <Field key={key} label={definition.label} hint={definition.help}>
+                      <Select value={String(value)} onChange={(e) => set(e.target.value)}>
+                        {definition.values.map((option) => (
+                          <option key={option} value={option}>
+                            {humanise(option)}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  );
+                }
+                return (
+                  <Field key={key} label={definition.label} hint={definition.help}>
+                    <Input
+                      value={String(value)}
+                      inputMode="decimal"
+                      className="tnum"
+                      onChange={(e) => {
+                        // Kept as text while empty so the field can be cleared
+                        // and retyped; Number('') is 0, which would fight the
+                        // officer for the cursor.
+                        const raw = e.target.value.replace(/[^\d.]/g, '');
+                        set(raw === '' ? '' : Number(raw));
+                      }}
+                    />
+                  </Field>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })}
       <MoneyOutOtpDialog gate={gate} />
     </div>
   );

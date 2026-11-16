@@ -2237,13 +2237,35 @@ export interface ConfigOrganizerFee {
   value: string | null;
 }
 
+export type PolicyArea =
+  | 'JOINING'
+  | 'CONTRIBUTIONS'
+  | 'SAVINGS'
+  | 'LOANS'
+  | 'WELFARE'
+  | 'OPPORTUNITIES';
+
+/**
+ * One rule a policy may set, described by the server so the portal can render
+ * the right input and never offer a rule the server would reject.
+ */
+export type PolicyRuleDefinition =
+  | { type: 'number'; label: string; help?: string; min?: number; max?: number; default: number }
+  | { type: 'boolean'; label: string; help?: string; default: boolean }
+  | { type: 'enum'; label: string; help?: string; values: string[]; default: string };
+
 export interface ConfigServicePolicy {
-  id: string;
-  area: 'JOINING' | 'CONTRIBUTIONS' | 'SAVINGS' | 'LOANS';
+  area: PolicyArea;
+  /** False until an officer saves it. Saving is what creates the policy. */
+  exists: boolean;
   content: string;
+  /** Stored values over the defaults, so a newly added rule still appears. */
   rules: Record<string, string | number | boolean>;
+  ruleDefinitions: Record<string, PolicyRuleDefinition>;
   isPublished: boolean;
+  /** Zero while unwritten. */
   version: number;
+  updatedAt: IsoDate | null;
 }
 
 export interface CommunityConfiguration {
