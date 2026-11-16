@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Button, Callout, Field, Input, Modal } from '@/components/ui';
 import { ApiError } from '@/lib/api';
@@ -50,12 +50,30 @@ const ACTION_LABELS: Record<string, string> = {
   MIGRATION_IMPORT: 'Approve these historical member records',
 };
 
+/**
+ * Discriminator the API sets when the code on screen is no longer live.
+ *
+ * Without it this arrives as an ordinary 400 and the dialog stays open around
+ * a code the server has already invalidated — the officer retypes it, is told
+ * again that it expired, and has no way to tell that the only way forward is
+ * to cancel and start over.
+ */
+const MONEY_OUT_APPROVAL_STALE = 'MONEY_OUT_APPROVAL_STALE';
+
 /** Reads the challenge out of an error, or null if it is a different error. */
 function challengeFrom(error: unknown): MoneyOutChallenge | null {
   if (!(error instanceof ApiError) || error.status !== 428) return null;
   const body = error.body as { code?: string; errors?: MoneyOutChallenge } | null;
   if (body?.code !== MONEY_OUT_OTP_REQUIRED || !body.errors?.challengeId) return null;
   return body.errors;
+}
+
+/** `resend` is the server's judgement on whether a replacement may be minted unasked. */
+function staleApprovalFrom(error: unknown): { resend: boolean } | null {
+  if (!(error instanceof ApiError) || error.status !== 400) return null;
+  const body = error.body as { code?: string; errors?: { resend?: boolean } } | null;
+  if (body?.code !== MONEY_OUT_APPROVAL_STALE) return null;
+  return { resend: body.errors?.resend === true };
 }
 
 export interface MoneyOutGate<P = void> {
@@ -107,26 +125,63 @@ export function useMoneyOutOtp<P = void>({
   // Held in a ref, not state: confirm() runs from the dialog after a render,
   // and a state write from run() would not be readable in the same tick.
   const payloadRef = useRef<P>(undefined as P);
+  // attempt() retries itself when the server reports a dead code, and a
+  // useCallback cannot name itself in its own body.
+  const attemptRef = useRef<(extra: MoneyOutExtra) => Promise<void>>(null);
+  // Mirrors `challenge` for the one decision that has to be made after an
+  // await, where the closed-over state value is already a render behind.
+  const challengeRef = useRef<MoneyOutChallenge | null>(null);
+
+  const applyChallenge = useCallback((next: MoneyOutChallenge | null) => {
+    challengeRef.current = next;
+    setChallenge(next);
+  }, []);
 
   const attempt = useCallback(
     async (extra: MoneyOutExtra) => {
       setPending(true);
       try {
         await perform(extra, payloadRef.current);
-        setChallenge(null);
+        applyChallenge(null);
         toast(successMessage, 'success');
         await onDone?.();
       } catch (error) {
         const next = challengeFrom(error);
         if (next) {
           // Not a failure: the server is asking for the owner's approval.
-          setChallenge(next);
+          applyChallenge(next);
           return;
         }
         // Already announced centrally, with the sequence of officers it now
         // needs. Reporting it here as well — and as a failure — is how an
         // officer comes to read their own community's controls as a fault.
         if (approvalChallengeFrom(error)) return;
+
+        // The code the officer is looking at is dead. It never survives this
+        // branch: a box that will reject every code typed into it is worse
+        // than no box, because it reads as the code being wrong rather than
+        // gone.
+        const stale = staleApprovalFrom(error);
+        if (stale) {
+          // `extra.resend` bounds the recursion: a freshly minted approval
+          // answers 428, so this can only ever fire once.
+          if (stale.resend && !extra.resend) {
+            toast('That code is no longer valid', 'info', 'Sending a new one to the owner…');
+            const dead = challengeRef.current?.challengeId;
+            // Left open across the retry on purpose — closing and reopening
+            // the dialog around a network round trip reads as a crash.
+            await attemptRef.current?.({ resend: true });
+            if (challengeRef.current?.challengeId === dead) applyChallenge(null);
+            return;
+          }
+          applyChallenge(null);
+          toast(
+            'Start that approval again',
+            'warning',
+            error instanceof Error ? error.message : 'That approval is no longer valid.',
+          );
+          return;
+        }
 
         toast(
           'Could not complete',
@@ -137,8 +192,14 @@ export function useMoneyOutOtp<P = void>({
         setPending(false);
       }
     },
-    [perform, onDone, successMessage, toast],
+    [perform, onDone, successMessage, toast, applyChallenge],
   );
+
+  // Written in an effect rather than during render — the retry only ever
+  // reads it from inside an already-running attempt, long after commit.
+  useEffect(() => {
+    attemptRef.current = attempt;
+  }, [attempt]);
 
   return {
     challenge,
@@ -152,7 +213,7 @@ export function useMoneyOutOtp<P = void>({
     ),
     confirm: useCallback((otp: string) => attempt({ otp }), [attempt]),
     resend: useCallback(() => attempt({ resend: true }), [attempt]),
-    cancel: useCallback(() => setChallenge(null), []),
+    cancel: useCallback(() => applyChallenge(null), [applyChallenge]),
   };
 }
 
@@ -168,6 +229,16 @@ type AnyMoneyOutGate = Omit<MoneyOutGate<never>, 'run'>;
 export function MoneyOutOtpDialog({ gate }: { gate: AnyMoneyOutGate }) {
   const [code, setCode] = useState('');
   const challenge = gate.challenge;
+
+  // A replacement code means an empty box: leaving the old digits in place
+  // invites submitting six that belong to an approval which no longer exists.
+  // Adjusted during render rather than in an effect so the stale digits are
+  // never painted — React re-runs this component before touching the DOM.
+  const [codeFor, setCodeFor] = useState(challenge?.challengeId);
+  if (challenge?.challengeId !== codeFor) {
+    setCodeFor(challenge?.challengeId);
+    setCode('');
+  }
 
   const close = () => {
     setCode('');
