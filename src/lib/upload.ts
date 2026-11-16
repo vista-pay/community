@@ -23,3 +23,35 @@ export async function uploadImage(file: File, folder: string): Promise<string> {
   }
   return json.secure_url as string;
 }
+
+export interface UploadedFile {
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/** 10MB. Large enough for a scanned statement, small enough to arrive. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The same upload, for a file that is not necessarily an image.
+ *
+ * Returns the metadata a message needs to render a sensible row — a name to
+ * show, a type to decide image-or-document by, and a size — rather than just
+ * the URL, which tells a reader nothing about what they are being sent.
+ */
+export async function uploadFile(file: File, folder: string): Promise<UploadedFile> {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error(`${file.name} is larger than 10MB.`);
+  }
+  const fileUrl = await uploadImage(file, folder);
+  return {
+    fileName: file.name,
+    fileUrl,
+    // Some browsers leave this empty; a generic beats a blank, because the
+    // renderer decides image-or-document from it.
+    mimeType: file.type || 'application/octet-stream',
+    sizeBytes: file.size,
+  };
+}

@@ -10,9 +10,16 @@
  */
 import { del, get, getBlob, patch, post, postBlob } from '@/lib/api';
 import type { MoneyOutExtra } from '@/components/money-out-otp';
+import type { UploadedFile } from '@/lib/upload';
 import type {
   AccountLedger,
+  AccountOfficerCard,
+  AccountOfficerMessage,
   AccountingPeriod,
+  BranchesOverview,
+  BranchMemberRow,
+  CommunityBranch,
+  EntitlementsSummary,
   ActivityFeed,
   AjoGroupDetail,
   AjoGroupSummary,
@@ -781,10 +788,101 @@ export const portalApi = {
   ) => post<Subscription>(`/community-subscriptions/${subscriptionId}/change-plan`, body),
   cancelScheduledPlanChange: (subscriptionId: string) =>
     del<Subscription>(`/community-subscriptions/${subscriptionId}/change-plan`),
+  /**
+   * Settle the open subscription invoice from the community wallet.
+   *
+   * Rendi never debits for a subscription on its own — a renewal raises an
+   * invoice and waits for this. `idempotencyKey` is required by the API and
+   * must be stable across retries of one confirmation.
+   */
+  paySubscription: (
+    subscriptionId: string,
+    idempotencyKey: string,
+    invoiceId: string | undefined,
+    extra: MoneyOutExtra,
+  ) =>
+    post<unknown>(
+      `/community-subscriptions/${subscriptionId}/pay`,
+      { ...(invoiceId ? { invoiceId } : {}), ...extra },
+      { headers: { 'Idempotency-Key': idempotencyKey } },
+    ),
+
+  /**
+   * Start a card or bank payment for the open invoice. Returns a Paystack
+   * checkout URL; the invoice closes — and any tier it buys is applied —
+   * when the provider confirms the payment.
+   */
+  paySubscriptionOnline: (subscriptionId: string, invoiceId?: string) =>
+    post<{
+      checkoutUrl: string;
+      reference: string;
+      amount: string;
+      currencyCode: string;
+      invoiceNumber: string;
+    }>(`/community-subscriptions/${subscriptionId}/pay-online`, invoiceId ? { invoiceId } : {}),
+
   cancelSubscription: (subscriptionId: string, reason: string, immediate = false) =>
     post<Subscription>(`/community-subscriptions/${subscriptionId}/cancel`, {
       reason,
       immediate,
+    }),
+
+  /**
+   * Enterprise has no self-serve price — this opens a support ticket the
+   * Rendi team works from, and returns the ticket reference to quote.
+   */
+  enterpriseEnquiry: (communityId: string, message?: string) =>
+    post<{ message: string; ticketReference: string | null }>(
+      '/community-subscriptions/enterprise-enquiry',
+      { communityId, ...(message?.trim() ? { message: message.trim() } : {}) },
+    ),
+
+  // ───────────────────── Entitlements & branches ─────────────────────
+
+  /** Read once by the shell to decide which plan-gated nav items exist. */
+  entitlements: (communityId: string) =>
+    get<EntitlementsSummary>(path(communityId, '/entitlements')),
+
+  branches: (communityId: string) => get<BranchesOverview>(path(communityId, '/branches')),
+  createBranch: (communityId: string, body: { name: string; description?: string }) =>
+    post<CommunityBranch>(path(communityId, '/branches'), body),
+  updateBranch: (
+    communityId: string,
+    branchId: string,
+    body: { name?: string; description?: string },
+  ) => patch<CommunityBranch>(path(communityId, `/branches/${branchId}`), body),
+  deleteBranch: (communityId: string, branchId: string) =>
+    del<{ deleted: true }>(path(communityId, `/branches/${branchId}`)),
+  branchMembers: (communityId: string, branchId: string) =>
+    get<BranchMemberRow[]>(path(communityId, `/branches/${branchId}/members`)),
+  /** Null branchId moves the members out of any branch. */
+  assignBranchMembers: (
+    communityId: string,
+    body: { memberIds: string[]; branchId: string | null },
+  ) => post<{ assigned: number }>(path(communityId, '/branches/assignments'), body),
+
+  // ───────────────────────── Account officer ─────────────────────────
+
+  /**
+   * Whether this community's plan carries dedicated support, and who covers
+   * it. `enabled: false` is a plan answer, not a failure — the shell probes
+   * this to decide whether the nav item exists at all.
+   */
+  accountOfficer: (communityId: string) =>
+    get<AccountOfficerCard>(path(communityId, '/account-officer')),
+
+  /** Opening the thread marks the officer's replies read on the server. */
+  accountOfficerThread: (communityId: string) =>
+    get<{ messages: AccountOfficerMessage[] }>(path(communityId, '/account-officer/messages')),
+
+  accountOfficerReply: (
+    communityId: string,
+    text: string,
+    attachments: UploadedFile[] = [],
+  ) =>
+    post<AccountOfficerMessage>(path(communityId, '/account-officer/messages'), {
+      text,
+      ...(attachments.length ? { attachments } : {}),
     }),
 
   // ───────────────────────── Notifications & settings ─────────────────────────

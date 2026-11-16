@@ -16,5 +16,19 @@ export default async function BillingPage() {
     ? await apiServerSafe<Subscription>(`/community-subscriptions/${dashboard.subscription.id}`)
     : null;
 
-  return <BillingClient plans={plans ?? []} subscription={subscription} />;
+  /**
+   * What the community is actually using, against the limits its tier grants.
+   * Taken from the dashboard it already loads rather than a second round of
+   * counting queries — a plan limit nobody can see their position against is
+   * a number, not an answer.
+   */
+  const usage = {
+    members: dashboard.members.active,
+    ajoGroups: dashboard.ajo.groups,
+    walletBalance:
+      dashboard.wallet?.accounts.find((account) => account.currencyCode === 'NGN')?.available ??
+      null,
+  };
+
+  return <BillingClient plans={plans ?? []} subscription={subscription} usage={usage} />;
 }

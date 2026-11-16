@@ -79,6 +79,13 @@ export const MEETING_KINDS = [
   { value: 'SPECIAL', label: 'Special meeting' },
 ] as const;
 
+/** How a meeting is held. Decides whether a venue, a link, or both are asked for. */
+export const MEETING_MODES = [
+  { value: 'IN_PERSON', label: 'In person', hint: 'Members come to a venue' },
+  { value: 'ONLINE', label: 'Online', hint: 'Members join from a link' },
+  { value: 'HYBRID', label: 'Hybrid', hint: 'A venue, open to members joining remotely' },
+] as const;
+
 export const DOCUMENT_CATEGORIES = [
   { value: 'GOVERNANCE', label: 'Governance' },
   { value: 'MINUTES', label: 'Minutes' },

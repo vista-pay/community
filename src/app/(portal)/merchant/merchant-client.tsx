@@ -261,7 +261,7 @@ export function MerchantClient({ initial }: { initial: MerchantOverview }) {
           tone={summary?.canSettle ? 'positive' : 'default'}
           icon={<PiggyBank className="h-4 w-4" />}
           footer={
-            <Link href="/merchant/payouts?tab=settlement" className="font-semibold text-brand-700">
+            <Link href="/merchant/settlement" className="font-semibold text-brand-700">
               Settlement settings
             </Link>
           }

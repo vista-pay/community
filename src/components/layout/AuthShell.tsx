@@ -12,7 +12,10 @@ export function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-dvh bg-white">
+    // Pinned to the viewport, not min-height: a long form (registration) must
+    // scroll inside its own column while the brand panel stays put — the same
+    // stillness the short sign-in form gets for free.
+    <div className="flex h-dvh bg-white">
       <section className="relative hidden w-[43%] min-w-[480px] flex-col overflow-hidden bg-[#101828] px-16 py-16 text-white lg:flex">
         <div className="relative z-10 flex items-center gap-3">
           <img src="/rendi-logo.svg" alt="Rendi" className="h-10 w-10 rounded-[11px] bg-white" />
@@ -33,8 +36,13 @@ export function AuthShell({
           style={{ right: -260, bottom: -110, width: 520, height: 520, border: "70px solid #111F3D" }}
         />
       </section>
-      <section className="flex flex-1 items-center justify-center overflow-y-auto bg-[#F8FAFC] px-4 py-10 sm:px-8">
-        {children}
+      {/* Centering lives on an inner wrapper with min-h-full rather than the
+          scroll container itself: flex-centering directly on an overflowing
+          container clips whatever rises above the fold. */}
+      <section className="flex-1 overflow-y-auto bg-[#F8FAFC]">
+        <div className="flex min-h-full items-center justify-center px-4 py-10 sm:px-8">
+          {children}
+        </div>
       </section>
     </div>
   );

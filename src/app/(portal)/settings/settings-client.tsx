@@ -93,7 +93,7 @@ export function SettingsClient({ community }: { community: Community }) {
     {
       onSuccess: () => {
         setVerificationFile(null);
-        toast('Verification document submitted', 'success', 'Vista administrators can now review it.');
+        toast('Verification document submitted', 'success', 'Re administrators can now review it.');
       },
       onError: (message) => toast('Could not upload the document', 'error', message),
     },

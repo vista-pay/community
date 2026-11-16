@@ -219,8 +219,11 @@ function VerificationProfileForm({
   }
 
   return (
+    // The dialog is pinned to the viewport: header and footer never move, and
+    // only the field area between them scrolls. The page behind must not
+    // scroll either — the title is what tells the owner what this wall is.
     <div
-      className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-navy-950/70 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-navy-950/70 p-4 backdrop-blur-sm"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="verification-profile-title"
@@ -228,9 +231,9 @@ function VerificationProfileForm({
       <form
         onSubmit={submit}
         noValidate
-        className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
-        <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
+        <div className="shrink-0 border-b border-slate-200 px-6 py-5 sm:px-8">
           <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
             <ShieldCheck className="h-5 w-5" aria-hidden />
           </span>
@@ -244,7 +247,7 @@ function VerificationProfileForm({
           </p>
         </div>
 
-        <div className="max-h-[62vh] space-y-7 overflow-y-auto px-6 py-6 sm:px-8">
+        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-6 py-6 sm:px-8">
           {error && <Callout tone="danger">{error}</Callout>}
 
           <section className="space-y-5">
@@ -306,42 +309,65 @@ function VerificationProfileForm({
 
             <Field
               label="Does the community already have members?"
-              htmlFor="vp-existing"
               required
-              hint="Running elsewhere today — on paper, a spreadsheet or another app"
-              error={touched && invalid.hasExistingMembers && 'Answer yes or no.'}
+              error={touched && invalid.hasExistingMembers && 'Pick one of the two.'}
             >
-              <Segmented
-                label="Existing members"
-                value={draft.hasExistingMembers || 'unset'}
-                onChange={(v) =>
-                  set('hasExistingMembers', v === 'unset' ? '' : (v as 'yes' | 'no'))
-                }
-                options={[
-                  { value: 'yes', label: 'Yes' },
-                  { value: 'no', label: 'No, starting fresh' },
-                ]}
-              />
-            </Field>
-
-            {hasMembers && (
-              <Field
-                label="Roughly how many?"
-                htmlFor="vp-count"
-                required
-                hint="You can import them later from Members → Add"
-                error={touched && invalid.existingMemberCount && 'Enter a whole number.'}
+              {/* Two cards, not a segmented control: an unset segmented reads
+                  as if something is already chosen, and the follow-up count
+                  lives inside the Yes card so the question and its answer
+                  stay one object. */}
+              <div
+                role="radiogroup"
+                aria-label="Does the community already have members?"
+                className="grid gap-3 sm:grid-cols-2"
               >
-                <Input
-                  id="vp-count"
-                  inputMode="numeric"
-                  value={draft.existingMemberCount}
-                  invalid={touched && invalid.existingMemberCount}
-                  onChange={(e) => set('existingMemberCount', e.target.value.replace(/\D/g, ''))}
-                  placeholder="120"
+                <MemberOption
+                  selected={draft.hasExistingMembers === 'yes'}
+                  invalid={touched && invalid.hasExistingMembers}
+                  onSelect={() => set('hasExistingMembers', 'yes')}
+                  title="Yes, we have members"
+                  body="The group runs today — on paper, a spreadsheet or another app."
+                >
+                  {hasMembers && (
+                    <div className="mt-3 border-t border-blue-100 pt-3">
+                      <label
+                        htmlFor="vp-count"
+                        className="text-[12.5px] font-medium text-navy-900"
+                      >
+                        Roughly how many?
+                      </label>
+                      <Input
+                        id="vp-count"
+                        inputMode="numeric"
+                        value={draft.existingMemberCount}
+                        invalid={touched && invalid.existingMemberCount}
+                        onChange={(e) =>
+                          set('existingMemberCount', e.target.value.replace(/\D/g, ''))
+                        }
+                        placeholder="120"
+                        className="mt-1.5"
+                        // The card is a radio button; typing must not re-fire it.
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <p className="mt-1.5 text-[12px] text-slate-500">
+                        {touched && invalid.existingMemberCount ? (
+                          <span className="text-red-600">Enter a whole number.</span>
+                        ) : (
+                          'A guess is fine — you can import them later from Members → Add.'
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </MemberOption>
+                <MemberOption
+                  selected={draft.hasExistingMembers === 'no'}
+                  invalid={touched && invalid.hasExistingMembers}
+                  onSelect={() => set('hasExistingMembers', 'no')}
+                  title="No, starting fresh"
+                  body="The member list begins here on Rendi."
                 />
-              </Field>
-            )}
+              </div>
+            </Field>
           </section>
 
           <section className="space-y-5 border-t border-slate-200 pt-6">
@@ -498,7 +524,7 @@ function VerificationProfileForm({
           </section>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-6 py-4 sm:flex-row sm:items-center sm:px-8">
+        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-6 py-4 sm:flex-row sm:items-center sm:px-8">
           <p className="text-[12.5px] leading-relaxed text-slate-500">
             Your answers are saved as you type — you can close this tab and come back.
           </p>
@@ -510,6 +536,68 @@ function VerificationProfileForm({
       </form>
     </div>
   );
+}
+
+/**
+ * One of the two answers to "does the community already have members?",
+ * drawn as a selectable card. The Yes card hosts the count field, so the
+ * follow-up appears where the answer was given instead of materialising
+ * elsewhere in the form.
+ */
+function MemberOption({
+  selected,
+  invalid,
+  onSelect,
+  title,
+  body,
+  children,
+}: {
+  selected: boolean;
+  invalid: boolean;
+  onSelect: () => void;
+  title: string;
+  body: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      role="radio"
+      aria-checked={selected}
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cnOption(selected, invalid)}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className={
+            selected
+              ? 'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[5px] border-blue-600 bg-white'
+              : 'mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-slate-300 bg-white'
+          }
+        />
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-semibold text-navy-900">{title}</p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-slate-500">{body}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function cnOption(selected: boolean, invalid: boolean) {
+  const base =
+    'cursor-pointer rounded-xl border p-3.5 text-left transition focus-ring';
+  if (selected) return `${base} border-blue-600 bg-blue-50/50 ring-1 ring-blue-600`;
+  if (invalid) return `${base} border-red-300 hover:border-red-400`;
+  return `${base} border-slate-200 hover:border-slate-300`;
 }
 
 function SectionLabel({

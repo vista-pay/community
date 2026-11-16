@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
       registrarName: body.registrarName,
       registrarEmail: body.registrarEmail,
       registrarPhone: body.registrarPhone,
+      // The plan chosen at onboarding. Omitted means the base plan — every
+      // community is on a plan from creation.
+      ...(body.planId ? { planId: body.planId } : {}),
     }),
     cache: 'no-store',
   });

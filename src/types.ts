@@ -250,10 +250,15 @@ export interface DashboardData {
      * not "new since you last looked" — it only clears by deciding.
      */
     approvals: number;
+    /**
+     * Unread replies from the community's account officer. Clears when the
+     * thread is opened, which marks them read.
+     */
+    accountOfficer: number;
   };
   /** Money held for members in contribution pots — see AjoPots. */
   ajoPots?: AjoPots;
-  upcomingMeeting: { id: string; title: string; scheduledFor: IsoDate; venue: string } | null;
+  upcomingMeeting: { id: string; title: string; scheduledFor: IsoDate; mode: MeetingMode; venue: string | null; meetingUrl: string | null } | null;
   subscription: { id: string; plan: string; status: string; renewsAt: IsoDate | null } | null;
   recentActivity: Array<{
     id: string;
@@ -262,6 +267,88 @@ export interface DashboardData {
     actorId: string | null;
     at: IsoDate;
   }>;
+}
+
+
+
+// ───────────────────────── Account officer ─────────────────────────
+
+/**
+ * The community's named platform contact, behind the `dedicated_support`
+ * plan feature. `enabled: false` is the normal answer for a plan without the
+ * feature — the shell uses it to hide the nav item, not to show an error.
+ */
+export interface AccountOfficerCard {
+  enabled: boolean;
+  officer: {
+    name: string;
+    email: string;
+    avatarUrl: string | null;
+    since: IsoDate;
+  } | null;
+  /** Officer replies not yet seen; the sidebar badge shows this number. */
+  unread: number;
+}
+
+export interface AccountOfficerAttachment {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface AccountOfficerMessage {
+  id: string;
+  text: string;
+  /** True when a platform admin wrote it, false for this community's officers. */
+  fromOfficer: boolean;
+  author: string;
+  readAt: IsoDate | null;
+  at: IsoDate;
+  attachments?: AccountOfficerAttachment[];
+}
+
+
+
+// ───────────────────── Entitlements & branches ─────────────────────
+
+/**
+ * The plan entitlements in force right now. The shell reads this once per
+ * session to decide which plan-gated surfaces (API keys, webhooks, branches,
+ * account officer) exist in its navigation — the API stays the authority on
+ * every actual call.
+ */
+export interface EntitlementsSummary {
+  planCode: string | null;
+  maxMembers: number | null;
+  maxStaffSeats: number | null;
+  maxAjoGroups: number | null;
+  features: string[];
+  allowsApiAccess: boolean;
+}
+
+/** A chapter of the community, behind the `branches` plan feature. */
+export interface CommunityBranch {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  createdAt: IsoDate;
+}
+
+/** `enabled: false` is the plan answer, not an error — the page explains. */
+export interface BranchesOverview {
+  enabled: boolean;
+  branches: CommunityBranch[];
+  /** Active members not in any branch. */
+  unassigned: number;
+}
+
+export interface BranchMemberRow {
+  id: string;
+  memberCode: string | null;
+  name: string;
 }
 
 
@@ -948,6 +1035,7 @@ export interface AccountLedger {
 // ───────────────────────────── Governance ─────────────────────────────
 
 export type MeetingKind = 'AGM' | 'GENERAL' | 'EXECUTIVE' | 'SPECIAL';
+export type MeetingMode = 'IN_PERSON' | 'ONLINE' | 'HYBRID';
 export type MeetingStatus = 'SCHEDULED' | 'HELD' | 'CANCELLED';
 export type MinutesStatus = 'NONE' | 'DRAFT' | 'APPROVED';
 export type AttendanceState = 'PRESENT' | 'ABSENT' | 'APOLOGY';
@@ -957,7 +1045,11 @@ export interface Meeting {
   title: string;
   kind: MeetingKind;
   scheduledFor: IsoDate;
-  venue: string;
+  mode: MeetingMode;
+  /** Null for a purely online meeting, which has no room. */
+  venue: string | null;
+  meetingUrl: string | null;
+  meetingPasscode: string | null;
   agenda: string[];
   status: MeetingStatus;
   minutes: string | null;
@@ -1414,6 +1506,12 @@ export interface SubscriptionPlan {
   trialDays: number;
   allowsApiAccess: boolean;
   isActive: boolean;
+  /**
+   * Agreed with Rendi rather than self-serve (Enterprise). Shown with the
+   * contact-support flow instead of a checkout button; the API refuses a
+   * direct checkout against it.
+   */
+  isNegotiated: boolean;
 }
 
 export interface Subscription {
@@ -1431,12 +1529,16 @@ export interface Subscription {
   autoRenew: boolean;
   /** When access actually stops, for a subscription being cancelled. */
   endsAt: IsoDate | null;
-  /** The limits and features in force for the period that was billed. */
+  /**
+   * The limits and features in force for the period that was billed. A null
+   * limit means unlimited — the plan stores it that way and the snapshot
+   * copies it, so treating it as a number renders an empty cell.
+   */
   entitlements: {
     planCode: string | null;
-    maxMembers: number;
-    maxStaffSeats: number;
-    maxAjoGroups: number;
+    maxMembers: number | null;
+    maxStaffSeats: number | null;
+    maxAjoGroups: number | null;
     features: string[];
     allowsApiAccess: boolean;
   };
@@ -1453,6 +1555,8 @@ export interface Subscription {
     issuedAt: IsoDate;
     dueAt: IsoDate;
     paidAt: IsoDate | null;
+    /** The tier this invoice buys — set only on an upgrade, null on a renewal. */
+    planName?: string | null;
   }>;
 }
 

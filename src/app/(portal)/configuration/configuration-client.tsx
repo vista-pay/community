@@ -596,8 +596,8 @@ function PayoutsSection({
             The destination and schedule live beside the settlement history, so what was chosen and
             what actually ran are read together.
           </p>
-          <LinkButton variant="secondary" href="/merchant/payouts">
-            Open payouts &amp; payees
+          <LinkButton variant="secondary" href="/merchant/settlement">
+            Open settlement
           </LinkButton>
         </div>
       </Card>

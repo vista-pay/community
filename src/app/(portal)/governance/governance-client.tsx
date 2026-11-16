@@ -40,12 +40,13 @@ import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { uploadImage } from '@/lib/upload';
 import { date, fileSize, humanise, money, relative } from '@/lib/format';
-import { MEETING_KINDS } from '@/data/catalog';
+import { MEETING_KINDS, MEETING_MODES } from '@/data/catalog';
 import type {
   AttendanceState,
   CommunityDocument,
   Fine,
   Meeting,
+  MeetingMode,
   MemberRow,
   Poll,
 } from '@/types';
@@ -186,7 +187,7 @@ function MeetingsTab({
           <Card key={m.id}>
             <CardHeader
               title={m.title}
-              subtitle={`${date(m.scheduledFor, 'datetime')} · ${m.venue}`}
+              subtitle={`${date(m.scheduledFor, 'datetime')} · ${whereOf(m)}`}
               action={<StatusBadge status={m.status.toLowerCase()} />}
             />
 
@@ -319,7 +320,10 @@ function MeetingModal({
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('GENERAL');
   const [scheduledFor, setScheduledFor] = useState('');
+  const [mode, setMode] = useState<string>('IN_PERSON');
   const [venue, setVenue] = useState('');
+  const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingPasscode, setMeetingPasscode] = useState('');
   const [agenda, setAgenda] = useState('');
   const [quorumPercent, setQuorumPercent] = useState('50');
 
@@ -329,7 +333,10 @@ function MeetingModal({
         title: title.trim(),
         kind,
         scheduledFor: new Date(scheduledFor).toISOString(),
+        mode,
         venue: venue.trim(),
+        meetingUrl: meetingUrl.trim(),
+        meetingPasscode: meetingPasscode.trim(),
         agenda: agenda
           .split('\n')
           .map((l) => l.trim())
@@ -341,7 +348,10 @@ function MeetingModal({
         toast('Meeting scheduled', 'success');
         setTitle('');
         setScheduledFor('');
+        setMode('IN_PERSON');
         setVenue('');
+        setMeetingUrl('');
+        setMeetingPasscode('');
         setAgenda('');
         onClose();
         await onCreated();
@@ -350,7 +360,15 @@ function MeetingModal({
     },
   );
 
-  const valid = title.trim().length > 2 && scheduledFor && venue.trim().length > 1;
+  // Mirrors the rule the server enforces, so the button is only live for a
+  // meeting the server would actually accept.
+  const needsVenue = mode !== 'ONLINE';
+  const needsLink = mode !== 'IN_PERSON';
+  const valid =
+    title.trim().length > 2 &&
+    Boolean(scheduledFor) &&
+    (!needsVenue || venue.trim().length > 1) &&
+    (!needsLink || meetingUrl.trim().length > 3);
 
   return (
     <Modal
@@ -417,6 +435,18 @@ function MeetingModal({
               onChange={(e) => setScheduledFor(e.target.value)}
             />
           </Field>
+          <Field label="How it is held" htmlFor="mt-mode">
+            <Select id="mt-mode" value={mode} onChange={(e) => setMode(e.target.value)}>
+              {MEETING_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+
+        {needsVenue && (
           <Field label="Venue" htmlFor="mt-venue" required>
             <Input
               id="mt-venue"
@@ -425,7 +455,33 @@ function MeetingModal({
               placeholder="Community Hall, Ojodu"
             />
           </Field>
-        </div>
+        )}
+
+        {needsLink && (
+          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+            <Field
+              label="Meeting link"
+              htmlFor="mt-url"
+              required
+              hint="Members get this in the notice and again shortly before it starts"
+            >
+              <Input
+                id="mt-url"
+                value={meetingUrl}
+                onChange={(e) => setMeetingUrl(e.target.value)}
+                placeholder="https://meet.google.com/abc-defg-hij"
+              />
+            </Field>
+            <Field label="Passcode" htmlFor="mt-passcode" optional>
+              <Input
+                id="mt-passcode"
+                value={meetingPasscode}
+                onChange={(e) => setMeetingPasscode(e.target.value)}
+                placeholder="482913"
+              />
+            </Field>
+          </div>
+        )}
 
         <Field label="Agenda" htmlFor="mt-agenda" optional hint="One item per line">
           <Textarea
@@ -439,6 +495,18 @@ function MeetingModal({
       </div>
     </Modal>
   );
+}
+
+/**
+ * Where a meeting happens, in the one line a list row has for it.
+ *
+ * An online meeting has no venue at all, so reading the venue alone left the
+ * row saying nothing about where to be.
+ */
+function whereOf(m: { mode: MeetingMode; venue: string | null }) {
+  if (m.mode === 'ONLINE') return 'Online';
+  if (m.mode === 'HYBRID') return m.venue ? `${m.venue} · and online` : 'In person and online';
+  return m.venue ?? 'Venue to be confirmed';
 }
 
 function AttendanceModal({

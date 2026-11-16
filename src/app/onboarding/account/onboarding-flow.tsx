@@ -1,17 +1,12 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { Building2, Check, MailCheck, ShieldCheck, UserRound } from 'lucide-react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Building2, Check, CreditCard, MailCheck, ShieldCheck, UserRound } from 'lucide-react';
 import { Button, Callout, Field, Input, PasswordInput, Segmented } from '@/components/ui';
 import { post } from '@/lib/api';
 import { cn } from '@/lib/format';
 
-type Step = 'details' | 'verify';
-
-const STEPS: Array<{ key: Step; label: string }> = [
-  { key: 'details', label: 'Community details' },
-  { key: 'verify', label: 'Verify email' },
-];
+type Step = 'community' | 'registrar' | 'plan' | 'verify';
 
 const COUNTRIES = [
   { value: 'NGA', label: 'Nigeria' },
@@ -19,96 +14,61 @@ const COUNTRIES = [
   { value: 'KEN', label: 'Kenya' },
 ];
 
-/**
- * Community registration.
- *
- *   1. Community + administrator details   POST /community-onboarding/register
- *   2. Confirm the code                    POST /auth/verify-otp (session starts)
- *   3. Verification profile                a modal in the portal, not here
- *
- * The account created in step 1 is the *organisation's*, not a person's: it
- * signs in with the community's official email, and that address — with the
- * official phone — is reserved platform-wide. The administrator's own email
- * and phone are recorded as a contact and claim nothing, so the same person
- * can still open an ordinary personal Rendi account afterwards.
- *
- * Someone already signed in skips straight to the details form, posting to
- * the authenticated `POST /communities` instead: they have an account, they
- * just do not have a community.
- */
-export function OnboardingFlow({ signedIn }: { signedIn: boolean }) {
-  const [step, setStep] = useState<Step>('details');
-  const [officialEmail, setOfficialEmail] = useState('');
+/** Registration is live in Nigeria; the others are on the roadmap. */
+const COMING_SOON: Record<string, string> = {
+  GHA: 'Ghana',
+  KEN: 'Kenya',
+};
 
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-      {!signedIn && <Steps current={step} />}
+/** What the registration plan chooser needs — a slice of the public plan list. */
+type OnboardingPlan = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthlyPrice: string;
+  currencyCode: string;
+  trialDays: number;
+  maxMembers: number | null;
+  maxAjoGroups: number | null;
+  isNegotiated: boolean;
+};
 
-      {step === 'details' && (
-        <DetailsStep
-          signedIn={signedIn}
-          onRegistered={(email) => {
-            setOfficialEmail(email);
-            setStep('verify');
-          }}
-        />
-      )}
-
-      {step === 'verify' && <VerifyStep identifier={officialEmail} />}
-    </section>
-  );
-}
-
-function Steps({ current }: { current: Step }) {
-  const index = STEPS.findIndex((s) => s.key === current);
-
-  return (
-    <ol className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
-      {STEPS.map((s, i) => {
-        const done = i < index;
-        const active = i === index;
-        return (
-          <li key={s.key} className="flex flex-1 items-center gap-2">
-            <span
-              className={cn(
-                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                done
-                  ? 'bg-navy-600 text-white'
-                  : active
-                    ? 'bg-navy-900 text-white'
-                    : 'bg-slate-200 text-slate-500',
-              )}
-            >
-              {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
-            </span>
-            <span
-              className={cn(
-                'truncate text-[13px]',
-                active ? 'font-medium text-navy-900' : 'text-slate-500',
-              )}
-            >
-              {s.label}
-            </span>
-            {i < STEPS.length - 1 && <span className="h-px flex-1 bg-slate-200" aria-hidden />}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-// ──────────────────────── 1. Community + administrator ────────────────────────
+const planPrice = (plan: OnboardingPlan) =>
+  Number(plan.monthlyPrice) === 0
+    ? 'Free'
+    : `₦${Number(plan.monthlyPrice).toLocaleString()}/month`;
 
 const emailBad = (v: string) => !/^\S+@\S+\.\S+$/.test(v.trim());
 const phoneBad = (v: string) => v.trim().replace(/\D/g, '').length < 10;
 
-function DetailsStep({
-  signedIn,
-  onRegistered,
-}: {
-  signedIn: boolean;
-  onRegistered: (officialEmail: string) => void;
-}) {
+/**
+ * Community registration, one decision per screen.
+ *
+ *   1. The community itself          (name, contacts, country, password)
+ *   2. The administrator (registrar)
+ *   3. The plan                      POST /community-onboarding/register
+ *   4. Confirm the official email    POST /auth/verify-otp (session starts)
+ *
+ * Nothing is sent until step 3's Continue — the earlier steps only validate —
+ * so Back never loses anything and abandoning the form costs nothing.
+ *
+ * The account created is the *organisation's*, not a person's: it signs in
+ * with the community's official email, and that address — with the official
+ * phone — is reserved platform-wide. The administrator's own email and phone
+ * are recorded as a contact and claim nothing.
+ *
+ * Someone already signed in walks the same three steps but posts to the
+ * authenticated `POST /communities` and skips the verify step: they have an
+ * account, they just do not have a community.
+ */
+export function OnboardingFlow({ signedIn }: { signedIn: boolean }) {
+  const [step, setStep] = useState<Step>('community');
+  const [touched, setTouched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Step 1 · the community ──
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -116,16 +76,36 @@ function DetailsStep({
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
 
+  // ── Step 2 · the administrator ──
   const [registrarName, setRegistrarName] = useState('');
   const [registrarEmail, setRegistrarEmail] = useState('');
   const [registrarPhone, setRegistrarPhone] = useState('');
 
-  const [touched, setTouched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // ── Step 3 · the plan ──
+  // Defaults to the base plan, and a failed load simply hides the cards — the
+  // API enrols on the base plan when no choice is sent, so registration never
+  // blocks on the price list.
+  const [plans, setPlans] = useState<OnboardingPlan[]>([]);
+  const [planId, setPlanId] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/community-onboarding/plans')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list: OnboardingPlan[]) => {
+        if (cancelled || !Array.isArray(list)) return;
+        setPlans(list);
+        const base = list.filter((plan) => !plan.isNegotiated)[0];
+        if (base) setPlanId((current) => current ?? base.id);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Validation, per step ──
   const nameBad = name.trim().length < 3;
-  const registrarNameBad = registrarName.trim().length < 3;
   // Mirrors the API's own rule, so a weak password is caught here rather than
   // coming back as a validation error after the round trip.
   const passwordBad =
@@ -134,29 +114,43 @@ function DetailsStep({
     !/[A-Z]/.test(password) ||
     !/[\d\W]/.test(password);
   const mismatch = confirm !== password;
+  const comingSoon = COMING_SOON[country];
 
-  // The same address on both halves of the form is the one mistake this flow
-  // has to catch before the API does, because the consequence is permanent:
-  // the official address is reserved, and the person who used their own would
-  // never be able to open a personal account on it.
-  const sameAsOfficial =
-    !emailBad(email) && email.trim().toLowerCase() === registrarEmail.trim().toLowerCase();
-
-  const valid =
+  const communityValid =
     !nameBad &&
     !emailBad(email) &&
     !phoneBad(phone) &&
-    !registrarNameBad &&
-    !emailBad(registrarEmail) &&
-    !phoneBad(registrarPhone) &&
-    !sameAsOfficial &&
+    !comingSoon &&
     (signedIn || (!passwordBad && !mismatch));
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  const registrarNameBad = registrarName.trim().length < 3;
+  // The same address on both halves is the one mistake this flow has to catch
+  // before the API does, because the consequence is permanent: the official
+  // address is reserved, and the person who used their own would never be
+  // able to open a personal account on it.
+  const sameAsOfficial =
+    !emailBad(email) && email.trim().toLowerCase() === registrarEmail.trim().toLowerCase();
+  const registrarValid =
+    !registrarNameBad && !emailBad(registrarEmail) && !phoneBad(registrarPhone) && !sameAsOfficial;
+
+  const steps: Array<{ key: Step; label: string }> = [
+    { key: 'community', label: 'Your community' },
+    { key: 'registrar', label: 'Administrator' },
+    { key: 'plan', label: 'Choose a plan' },
+    ...(signedIn ? [] : [{ key: 'verify' as Step, label: 'Confirm email' }]),
+  ];
+
+  function advance(to: Step, valid: boolean) {
     setTouched(true);
+    if (!valid) return;
+    setTouched(false);
     setError(null);
-    if (!valid || loading) return;
+    setStep(to);
+  }
+
+  async function submit() {
+    setTouched(true);
+    if (loading) return;
 
     const payload = {
       name: name.trim(),
@@ -166,18 +160,19 @@ function DetailsStep({
       registrarName: registrarName.trim(),
       registrarEmail: registrarEmail.trim().toLowerCase(),
       registrarPhone: registrarPhone.trim(),
+      ...(planId ? { planId } : {}),
     };
 
     setLoading(true);
+    setError(null);
     try {
       if (signedIn) {
         // Already has an account, so the authenticated endpoint applies and
         // there is no email to verify — straight into the portal, where the
-        // verification modal takes over.
+        // verification modal takes over. A full load, not router.push: the
+        // community cookie is set on a fetch response and the portal shell is
+        // a server component that has to read it on a fresh request.
         await post('/communities', payload);
-        // A full load, not router.push: the community cookie is set on a
-        // fetch response and the portal shell is a server component that has
-        // to read it on a fresh request.
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = '/dashboard';
         return;
@@ -190,7 +185,9 @@ function DetailsStep({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message ?? 'Could not register this community.');
-      onRegistered(payload.email);
+      setTouched(false);
+      setStep('verify');
+      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not register this community.');
       setLoading(false);
@@ -198,23 +195,17 @@ function DetailsStep({
   }
 
   return (
-    <>
-      <Header
-        icon={<Building2 className="h-5 w-5" />}
-        title="Register your community"
-        body="Two things: the community itself, and who is registering it. Rendi reviews every registration before a community can collect contributions."
-      />
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+      <Steps steps={steps} current={step} />
 
-      <form className="space-y-7 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
-        {error && <Callout tone="danger">{error}</Callout>}
-
-        <fieldset className="space-y-5">
-          <SectionLabel
-            icon={<Building2 className="h-3.5 w-3.5" />}
-            title="Community details"
-            body="These belong to the organisation, and the official email is what you will sign in with."
-          />
-
+      {step === 'community' && (
+        <StepFrame
+          icon={<Building2 className="h-5 w-5" />}
+          title="Register your community"
+          body="These details belong to the organisation — the official email is what you will sign in with."
+          onNext={() => advance('registrar', communityValid)}
+          error={error}
+        >
           <div className="grid gap-5 sm:grid-cols-2">
             <Field
               className="sm:col-span-2"
@@ -268,13 +259,21 @@ function DetailsStep({
             </Field>
 
             <Field className="sm:col-span-2" label="Country" htmlFor="cm-country" required>
-              <Segmented
-                label="Country"
-                value={country}
-                onChange={setCountry}
-                options={COUNTRIES}
-              />
+              <Segmented label="Country" value={country} onChange={setCountry} options={COUNTRIES} />
             </Field>
+
+            {comingSoon && (
+              <div className="sm:col-span-2">
+                <Callout tone="warning" title={`Coming soon to ${comingSoon}`}>
+                  Rendi Communities is not live in {comingSoon} yet — registration is currently
+                  open to communities in Nigeria. Leave your community&rsquo;s details at{' '}
+                  <a className="font-medium underline" href="mailto:hello@rendi.app">
+                    hello@rendi.app
+                  </a>{' '}
+                  and we will write the moment it opens.
+                </Callout>
+              </div>
+            )}
 
             {!signedIn && (
               <>
@@ -311,15 +310,18 @@ function DetailsStep({
               </>
             )}
           </div>
-        </fieldset>
+        </StepFrame>
+      )}
 
-        <fieldset className="space-y-5 border-t border-slate-200 pt-6">
-          <SectionLabel
-            icon={<UserRound className="h-3.5 w-3.5" />}
-            title="Administrator (registrar)"
-            body="You, the person registering. These stay yours — you can still open a personal Rendi account with this email and phone."
-          />
-
+      {step === 'registrar' && (
+        <StepFrame
+          icon={<UserRound className="h-5 w-5" />}
+          title="Administrator (registrar)"
+          body="You, the person registering. These stay yours — you can still open a personal Rendi account with this email and phone."
+          onBack={() => setStep('community')}
+          onNext={() => advance('plan', registrarValid)}
+          error={error}
+        >
           <div className="grid gap-5 sm:grid-cols-2">
             <Field
               className="sm:col-span-2"
@@ -335,6 +337,7 @@ function DetailsStep({
                 invalid={touched && registrarNameBad}
                 autoComplete="name"
                 placeholder="Adaeze Okonkwo"
+                autoFocus
               />
             </Field>
 
@@ -375,20 +378,188 @@ function DetailsStep({
               />
             </Field>
           </div>
-        </fieldset>
+        </StepFrame>
+      )}
 
-        <Callout tone="info" title="What happens next">
-          <span className="inline-flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            {signedIn
-              ? 'You will be asked for a few more details about the community, then Rendi reviews the registration. Collections, payouts and lending stay restricted until it passes.'
-              : 'Confirm the code sent to the official email, then answer a few questions about the community. Rendi reviews it from there.'}
-          </span>
-        </Callout>
+      {step === 'plan' && (
+        <StepFrame
+          icon={<CreditCard className="h-5 w-5" />}
+          title="Choose a plan"
+          body="Every community is on a plan. Start free and upgrade any time from the Billing page."
+          onBack={() => setStep('registrar')}
+          onNext={() => void submit()}
+          nextLabel={signedIn ? 'Register community' : 'Create community account'}
+          nextLoading={loading}
+          error={error}
+        >
+          {plans.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              The price list did not load — no matter: you start on the base plan and can change it
+              any time from the Billing page.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {plans.map((plan) =>
+                plan.isNegotiated ? (
+                  <div
+                    key={plan.id}
+                    className="rounded-2xl border border-dashed border-slate-200 p-4 text-left"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-navy-900">{plan.name}</p>
+                      <span className="text-xs font-semibold text-slate-500">Custom</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Priced for your cooperative and agreed with Rendi — ask about it from the
+                      Billing page once you are set up.
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    onClick={() => setPlanId(plan.id)}
+                    className={cn(
+                      'rounded-2xl border p-4 text-left transition',
+                      planId === plan.id
+                        ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-600'
+                        : 'border-slate-200 hover:border-slate-300',
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-navy-900">{plan.name}</p>
+                      <span
+                        className={cn(
+                          'text-xs font-semibold',
+                          planId === plan.id ? 'text-blue-700' : 'text-slate-500',
+                        )}
+                      >
+                        {planPrice(plan)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {plan.maxMembers ? `Up to ${plan.maxMembers} members` : 'Unlimited members'}
+                      {' · '}
+                      {plan.maxAjoGroups
+                        ? `${plan.maxAjoGroups} Ajo group${plan.maxAjoGroups === 1 ? '' : 's'}`
+                        : 'Unlimited Ajo groups'}
+                      {plan.trialDays > 0 ? ` · ${plan.trialDays}-day free trial` : ''}
+                    </p>
+                  </button>
+                ),
+              )}
+            </div>
+          )}
 
-        <div className="flex justify-end border-t border-slate-200 pt-5">
-          <Button type="submit" variant="blue" size="lg" loading={loading}>
-            {signedIn ? 'Register community' : 'Create community account'}
+          <Callout tone="info" title="What happens next">
+            <span className="inline-flex items-start gap-1.5">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              {signedIn
+                ? 'You will be asked for a few more details about the community, then Rendi reviews the registration. Collections, payouts and lending stay restricted until it passes.'
+                : 'Confirm the code sent to the official email, then answer a few questions about the community. Rendi reviews it from there.'}
+            </span>
+          </Callout>
+        </StepFrame>
+      )}
+
+      {step === 'verify' && <VerifyStep identifier={email.trim().toLowerCase()} />}
+    </section>
+  );
+}
+
+function Steps({ steps, current }: { steps: Array<{ key: Step; label: string }>; current: Step }) {
+  const index = steps.findIndex((s) => s.key === current);
+
+  return (
+    <ol className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-6 py-3">
+      {steps.map((s, i) => {
+        const done = i < index;
+        const active = i === index;
+        return (
+          <li key={s.key} className="flex flex-1 items-center gap-2">
+            <span
+              className={cn(
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+                done
+                  ? 'bg-navy-600 text-white'
+                  : active
+                    ? 'bg-navy-900 text-white'
+                    : 'bg-slate-200 text-slate-500',
+              )}
+            >
+              {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+            </span>
+            <span
+              className={cn(
+                'truncate text-[13px]',
+                active ? 'font-medium text-navy-900' : 'text-slate-500',
+              )}
+            >
+              {s.label}
+            </span>
+            {i < steps.length - 1 && <span className="h-px flex-1 bg-slate-200" aria-hidden />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * One screen of the wizard: heading, the fields, and a Back / Continue rail.
+ * A form so Enter advances, exactly as it would submit a single-page form.
+ */
+function StepFrame({
+  icon,
+  title,
+  body,
+  children,
+  onBack,
+  onNext,
+  nextLabel = 'Continue',
+  nextLoading = false,
+  error,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+  children: ReactNode;
+  onBack?: () => void;
+  onNext: () => void;
+  nextLabel?: string;
+  nextLoading?: boolean;
+  error: string | null;
+}) {
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    onNext();
+  }
+
+  return (
+    <>
+      <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
+        <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-navy-50 text-navy-700">
+          {icon}
+        </span>
+        <h1 className="text-2xl font-semibold text-navy-900">{title}</h1>
+        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{body}</p>
+      </div>
+
+      <form className="space-y-6 px-6 py-6 sm:px-8" onSubmit={handleSubmit} noValidate>
+        {error && <Callout tone="danger">{error}</Callout>}
+
+        {children}
+
+        <div className="flex items-center justify-between border-t border-slate-200 pt-5">
+          {onBack ? (
+            <Button variant="ghost" onClick={onBack} disabled={nextLoading}>
+              Back
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Button type="submit" variant="blue" size="lg" loading={nextLoading}>
+            {nextLabel}
           </Button>
         </div>
       </form>
@@ -396,7 +567,7 @@ function DetailsStep({
   );
 }
 
-// ───────────────────────────── 2. Verify ─────────────────────────────
+// ───────────────────────── 4. Confirm the official email ─────────────────────────
 
 function VerifyStep({ identifier }: { identifier: string }) {
   const [otp, setOtp] = useState('');
@@ -460,11 +631,15 @@ function VerifyStep({ identifier }: { identifier: string }) {
 
   return (
     <>
-      <Header
-        icon={<MailCheck className="h-5 w-5" />}
-        title="Confirm the official email"
-        body={`We sent a six-digit code to ${identifier}. Enter it to activate the community account.`}
-      />
+      <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
+        <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-navy-50 text-navy-700">
+          <MailCheck className="h-5 w-5" />
+        </span>
+        <h1 className="text-2xl font-semibold text-navy-900">Confirm the official email</h1>
+        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+          We sent a six-digit code to {identifier}. Enter it to activate the community account.
+        </p>
+      </div>
 
       <form className="space-y-5 px-6 py-6 sm:px-8" onSubmit={submit} noValidate>
         {error && <Callout tone="danger">{error}</Callout>}
@@ -494,31 +669,5 @@ function VerifyStep({ identifier }: { identifier: string }) {
         </div>
       </form>
     </>
-  );
-}
-
-function SectionLabel({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
-  return (
-    <div>
-      <legend className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-navy-900">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy-50 text-navy-700">
-          {icon}
-        </span>
-        {title}
-      </legend>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">{body}</p>
-    </div>
-  );
-}
-
-function Header({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
-  return (
-    <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
-      <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-navy-50 text-navy-700">
-        {icon}
-      </span>
-      <h1 className="text-2xl font-semibold text-navy-900">{title}</h1>
-      <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{body}</p>
-    </div>
   );
 }

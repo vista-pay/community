@@ -27,6 +27,7 @@ import {
   RefreshCw,
   ChevronDown,
   Coins,
+  Landmark,
   FileSpreadsheet,
   ListTree,
   NotebookPen,
@@ -53,13 +54,17 @@ import {
   Undo2,
   ShieldCheck,
   Import,
+  Headset,
+  KeyRound,
+  Network,
+  Webhook,
 } from 'lucide-react';
 import { cn } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import type { DashboardData } from '@/types';
+import type { DashboardData, EntitlementsSummary } from '@/types';
 import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
@@ -135,6 +140,9 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
           { href: '/loans/guarantors', label: 'Guarantors', icon: ShieldCheck, countKey: 'loans' },
         ],
       },
+      // Plan-gated on the `branches` feature (see planGates in the Sidebar):
+      // chapters that group the member roster.
+      { href: '/branches' as Route, label: 'Branches', icon: Network, countKey: 'members' },
       // { href: '/services', label: 'Services', icon: Sparkles },
       { href: '/welfare', label: 'Welfare', icon: HeartHandshake, countKey: 'welfare' },
       { href: '/opportunities', label: 'Opportunities', icon: Sparkles, countKey: 'opportunities' },
@@ -186,15 +194,17 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
       { href: '/merchant', label: 'Merchant account', icon: Store, exact: true, countKey: 'merchant' },
       { href: '/merchant/transactions', label: 'Transactions', icon: WalletIcon, countKey: 'wallet' },
       { href: '/merchant/payouts', label: 'Payouts & payees', icon: Send, countKey: 'merchant' },
+      { href: '/merchant/settlement', label: 'Settlement', icon: Landmark, countKey: 'merchant' },
       { href: '/merchant/payment-links', label: 'Payment links', icon: Link2, countKey: 'merchantPaymentLinks' },
       { href: '/merchant/invoices', label: 'Invoices', icon: FileText, countKey: 'merchantInvoices' },
-      // Hidden until the backend supports them. An API key authenticates
-      // nothing — there is no key guard or strategy in the API — and nothing
-      // dispatches to a registered webhook endpoint. The pages still exist and
-      // the endpoints still work; uncomment these two lines once a request can
-      // actually be made with a key and an endpoint can actually be called.
-      // { href: '/merchant/api-keys', label: 'API keys', icon: KeyRound, countKey: 'merchantApiKeys' },
-      // { href: '/merchant/webhooks', label: 'Webhooks', icon: Webhook, countKey: 'merchantWebhooks' },
+      // Plan-gated (see planGates in the Sidebar): API keys behind the
+      // `api_access` feature, webhooks behind `integrations`. The honest
+      // caveat still applies platform-wide — no request authenticates with a
+      // key yet and nothing dispatches to a webhook — but issuing and
+      // managing the credentials is now a real plan capability, and both
+      // pages say so themselves.
+      { href: '/merchant/api-keys', label: 'API keys', icon: KeyRound, countKey: 'merchantApiKeys' },
+      { href: '/merchant/webhooks', label: 'Webhooks', icon: Webhook, countKey: 'merchantWebhooks' },
     ],
   },
   {
@@ -212,6 +222,10 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
     group: 'Manage',
     items: [
       { href: '/staff', label: 'Staff & roles', icon: UserCog, countKey: 'staff' },
+      // Only communities whose plan carries `dedicated_support` see this —
+      // the Sidebar drops it when the probe says the feature is off, the same
+      // way the Rendi AI dock is probed rather than flagged.
+      { href: '/account-officer' as Route, label: 'Account officer', icon: Headset, countKey: 'accountOfficer' },
       // Below Staff rather than inside Members: a migration is a one-time
       // project with its own lifecycle, not a way of adding a member.
       { href: '/migrate', label: 'Migrate', icon: Import, countKey: 'staff' },
@@ -252,6 +266,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     { enabled: Boolean(community) },
   );
   const rendiAiEnabled = Boolean(rendiAi?.enabled);
+
+  // One probe decides every plan-gated nav item: the community's current
+  // entitlements. Items whose feature the plan lacks are dropped, not
+  // disabled — a plan limit is not something an officer can act on from a
+  // greyed-out row. The API stays the authority on every actual call.
+  const { data: entitlements } = useQuery<EntitlementsSummary | null>(
+    () => (community ? portalApi.entitlements(community.id) : Promise.resolve(null)),
+    [community?.id],
+    { enabled: Boolean(community) },
+  );
+  const features = entitlements?.features ?? [];
+  const planGates: Record<string, boolean> = {
+    '/account-officer': features.includes('dedicated_support'),
+    '/branches': features.includes('branches'),
+    '/merchant/api-keys': features.includes('api_access') || Boolean(entitlements?.allowsApiAccess),
+    '/merchant/webhooks': features.includes('integrations'),
+  };
 
   /**
    * Opening Rendi AI collapses the left sidebar: two sidebars plus content is
@@ -371,7 +402,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           collapsed ? 'w-[72px]' : 'w-64',
         )}
       >
-        <Sidebar collapsed={collapsed} counts={navigationCounts ?? undefined} />
+        <Sidebar
+          collapsed={collapsed}
+          counts={navigationCounts ?? undefined}
+          planGates={planGates}
+        />
         <button
           onClick={toggleSidebar}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -392,6 +427,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Sidebar
               collapsed={false}
               counts={navigationCounts ?? undefined}
+              planGates={planGates}
               onNavigate={() => setMobileOpen(false)}
             />
             <button
@@ -457,10 +493,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 function Sidebar({
   collapsed,
   counts,
+  planGates,
   onNavigate,
 }: {
   collapsed: boolean;
   counts?: NavigationCounts;
+  /** href → whether the plan grants it; hrefs not listed are always shown. */
+  planGates?: Record<string, boolean>;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -468,6 +507,13 @@ function Sidebar({
 
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+  // Plan-gated items are dropped, not disabled: a plan limit is not
+  // something an officer can act on from a greyed-out row.
+  const nav = NAV.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => planGates?.[item.href] ?? true),
+  }));
 
   return (
     <div className="flex h-full flex-col">
@@ -495,7 +541,7 @@ function Sidebar({
       )}
 
       <nav className="mt-3 flex-1 overflow-y-auto px-3 pb-20" aria-label="Main">
-        {NAV.map((group) => (
+        {nav.map((group) => (
           <div key={group.group} className="mt-4 first:mt-2">
             {!collapsed && (
               <p className="px-3 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-navy-400">

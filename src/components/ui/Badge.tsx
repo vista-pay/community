@@ -32,6 +32,9 @@ const STATUS: Record<string, [Tone, string]> = {
   failed: ['red', 'Failed'], overdue: ['red', 'Overdue'], rejected: ['red', 'Rejected'], suspended: ['red', 'Suspended'], mismatch: ['red', 'Mismatch'], revoked: ['red', 'Revoked'],
   processing: ['blue', 'Processing'], approved: ['blue', 'Approved'], selected: ['blue', 'Selected'], disbursed: ['blue', 'Disbursed'], uploading: ['blue', 'Uploading…'],
   reversed: ['purple', 'Reversed'],
+  // Subscription lifecycle. Without these the badge printed the raw
+  // enum — "past_due" — straight onto the billing page.
+  trialing: ['blue', 'On trial'], past_due: ['red', 'Payment due'], grace: ['amber', 'Grace period'], expired: ['slate', 'Expired'], cancelled: ['slate', 'Cancelled'], void: ['slate', 'Cancelled'], uncollectible: ['slate', 'Written off'],
   draft: ['slate', 'Draft'], scheduled: ['slate', 'Scheduled'], closed: ['slate', 'Closed'], inactive: ['slate', 'Inactive'], ended: ['slate', 'Ended'], paused: ['slate', 'Paused'], not_started: ['slate', 'Not started'], not_submitted: ['slate', 'Not submitted'], coming_soon: ['slate', 'Coming soon'], completed: ['green', 'Completed'],
 };
 
