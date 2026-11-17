@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { API_BASE } from '@/lib/constants';
+import { API_BASE, SURFACE_HEADERS } from '@/lib/constants';
 
 /**
  * The published plan list for the registration form's plan chooser.
@@ -8,7 +8,10 @@ import { API_BASE } from '@/lib/constants';
  * session exists — the upstream endpoint is public and read-only.
  */
 export async function GET() {
-  const res = await fetch(`${API_BASE}/community-onboarding/plans`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/community-onboarding/plans`, {
+    headers: { ...SURFACE_HEADERS },
+    cache: 'no-store',
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return NextResponse.json({ message: 'Could not load plans' }, { status: res.status });

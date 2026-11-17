@@ -64,7 +64,7 @@ import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import type { DashboardData, EntitlementsSummary } from '@/types';
+import type { CommunitySummary, DashboardData, EntitlementsSummary } from '@/types';
 import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
@@ -347,7 +347,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, [community, pathname, refreshNavigation]);
 
-  const unverified = community?.status !== 'VERIFIED';
+  // Rendi has stopped this community. Everything inside it will refuse, so
+  // this is the one thing on screen that has to be right.
+  const halt = community?.halt ?? null;
+  // This officer's own powers are paused, in a community that is otherwise
+  // running. Shown instead of letting the portal look broken.
+  const adminAccess = community?.adminAccess ?? null;
+
+  // Suppressed while halted: "verification pending" is both wrong and
+  // misleading for a suspended community, and two banners contradicting each
+  // other is worse than either alone.
+  const unverified = community?.status !== 'VERIFIED' && !halt;
 
   // Verification mandates the public listing. Rather than yanking the officer
   // off whatever page they opened, a blocking modal explains the one thing
@@ -473,6 +483,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
+        {halt && <HaltBanner halt={halt} />}
+        {!halt && adminAccess && <AdminAccessBanner suspension={adminAccess} />}
         {unverified && <VerificationBanner />}
 
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
@@ -708,6 +720,81 @@ function ProfileMenu() {
         </>
       )}
     </Popover>
+  );
+}
+
+/**
+ * The community has been stopped by Rendi.
+ *
+ * Renders the API's own `message` rather than composing its own sentence: an
+ * officer who ignores this and clicks something will get that exact wording
+ * back as an error, and the banner saying something different would read as
+ * two unrelated problems.
+ *
+ * Red for a suspension, slate for an inactive community. The difference is
+ * the point — one is a sanction, the other is a community that has simply
+ * wound down, and colouring them the same would accuse a dormant cooperative
+ * of something.
+ */
+function HaltBanner({ halt }: { halt: NonNullable<CommunitySummary['halt']> }) {
+  const sanctioned = halt.status !== 'INACTIVE';
+  return (
+    <div
+      role="alert"
+      className={cn(
+        'border-b',
+        sanctioned ? 'border-red-200 bg-red-50' : 'border-slate-300 bg-slate-100',
+      )}
+    >
+      <div
+        className={cn(
+          'flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:px-6',
+          sanctioned ? 'text-red-900' : 'text-slate-800',
+        )}
+      >
+        <ShieldAlert
+          className={cn(
+            'mt-0.5 h-4 w-4 shrink-0',
+            sanctioned ? 'text-red-600' : 'text-slate-500',
+          )}
+        />
+        <span className="flex-1">
+          <strong className="font-semibold">
+            {halt.status === 'SUSPENDED'
+              ? 'Community suspended.'
+              : halt.status === 'INACTIVE'
+                ? 'Community inactive.'
+                : 'Registration not approved.'}
+          </strong>{' '}
+          {halt.message}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * This officer's powers are paused, but the community is running.
+ *
+ * Worth its own banner because the failure mode without it is the worst kind:
+ * every button still there, every one of them refusing, and no explanation
+ * anywhere on the page.
+ */
+function AdminAccessBanner({
+  suspension,
+}: {
+  suspension: NonNullable<CommunitySummary['adminAccess']>;
+}) {
+  return (
+    <div role="alert" className="border-b border-amber-300 bg-amber-100">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] text-amber-900 sm:px-6">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        <span className="flex-1">
+          <strong className="font-semibold">Administrator access suspended.</strong>{' '}
+          {suspension.message}
+        </span>
+      </div>
+    </div>
   );
 }
 

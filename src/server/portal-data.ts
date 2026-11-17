@@ -15,12 +15,18 @@ import type { CommunitySummary, PortalSession, PortalUser } from '@/types';
 
 interface RawCommunity {
   id: string;
+  publicId?: string | null;
   name: string;
   slug: string;
   role: string;
   title: string | null;
   membershipStatus: CommunitySummary['membershipStatus'];
   status: CommunitySummary['status'];
+  verificationLevel?: CommunitySummary['verificationLevel'];
+  /** Rendi has stopped this community; see `CommunityHalt`. */
+  halt?: CommunitySummary['halt'];
+  /** This officer's own powers are paused. */
+  adminAccess?: CommunitySummary['adminAccess'];
   memberCount: number;
   listingSetupRequired: boolean;
   verificationProfileRequired: boolean;

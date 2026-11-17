@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { API_BASE } from '@/lib/constants';
+import { API_BASE, SURFACE_HEADERS } from '@/lib/constants';
 import { readUpstreamError } from '@/lib/upstream';
 
 /** Requests a password-reset code. The upstream reply is deliberately generic. */
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   const res = await fetch(`${API_BASE}/auth/forgot-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...SURFACE_HEADERS },
     body: JSON.stringify({ identifier }),
     cache: 'no-store',
   });

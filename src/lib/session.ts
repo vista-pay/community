@@ -6,6 +6,7 @@ import {
   COMMUNITY_COOKIE,
   REFRESH_COOKIE,
   SESSION_FLAG_COOKIE,
+  SURFACE_HEADERS,
 } from './constants';
 
 /**
@@ -132,7 +133,7 @@ export async function refreshSession(): Promise<RefreshResult> {
   try {
     res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...SURFACE_HEADERS },
       body: JSON.stringify({ refreshToken }),
       cache: 'no-store',
       // A refresh that hangs must not hang the page behind it. Without this

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api';
+import { useRealtimeEvent } from '@/hooks/use-realtime';
 import type { PortalSession } from '@/types';
 
 interface SessionApi extends PortalSession {
@@ -52,6 +53,32 @@ export function SessionProvider({
     router.replace('/signin');
     router.refresh();
   }, [router]);
+
+  /**
+   * A platform decision landed on this community, or on this officer's
+   * standing in it — a suspension, a deactivation, a restore, a change to
+   * their administrator access.
+   *
+   * `router.refresh()` rather than patching local state: the session is read
+   * by the server layout, so a refresh re-reads it from the API and the halt
+   * banner, the navigation and the officer's permissions all come back
+   * consistent. Patching one field here would leave the other two stale,
+   * which is exactly the "one app shows a different status" problem this
+   * whole path exists to prevent.
+   *
+   * The event is a hint carrying ids only; the API decides what this officer
+   * may now see.
+   */
+  const onPlatformChange = useCallback(
+    (payload: { communityId?: string }) => {
+      if (payload.communityId && payload.communityId !== session.community?.id) return;
+      router.refresh();
+    },
+    [router, session.community?.id],
+  );
+
+  useRealtimeEvent('community.status.changed', onPlatformChange);
+  useRealtimeEvent('membership.changed', onPlatformChange);
 
   const value = useMemo<SessionApi>(
     () => ({ ...session, switchCommunity, signOut, switching }),

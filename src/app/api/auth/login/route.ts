@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { API_BASE } from '@/lib/constants';
+import { API_BASE, SURFACE_HEADERS } from '@/lib/constants';
 import { setActiveCommunityId, writeSession } from '@/lib/session';
 import { readUpstreamError } from '@/lib/upstream';
 import { isOfficerRole } from '@/lib/roles';
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...SURFACE_HEADERS },
     body: JSON.stringify({ identifier: body.identifier, password: body.password }),
     cache: 'no-store',
   });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { API_BASE } from '@/lib/constants';
+import { API_BASE, SURFACE_HEADERS } from '@/lib/constants';
 import { clearSession, getAccessToken, refreshSession } from '@/lib/session';
 
 /**
@@ -34,6 +34,12 @@ async function forward(req: NextRequest, path: string[]) {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   });
   headers.set('Content-Type', req.headers.get('content-type') ?? 'application/json');
+  // Which application this is, for the platform activity stream the Super
+  // Admin console reads. Set here rather than in the client because this
+  // handler is the portal's only route to the API, so there is exactly one
+  // place it can be forgotten — and set, not copied, so a browser cannot
+  // claim to be a different app by sending its own.
+  for (const [name, value] of Object.entries(SURFACE_HEADERS)) headers.set(name, value);
 
   const body =
     req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.text();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { API_BASE } from '@/lib/constants';
+import { API_BASE, SURFACE_HEADERS } from '@/lib/constants';
 import { getAccessToken } from '@/lib/session';
 
 /**
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
+          ...SURFACE_HEADERS,
         },
         body: JSON.stringify(body),
         // Node's fetch buffers without this.

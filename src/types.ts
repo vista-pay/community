@@ -21,8 +21,33 @@ export interface PortalUser {
   name: string;
 }
 
+/**
+ * Why a community is stopped, in Rendi's own words.
+ *
+ * `message` comes from the API rather than being composed here on purpose:
+ * the officer reads this sentence in the banner and would read the identical
+ * sentence in the error if they tried to act, and two copies of that wording
+ * drift apart the first time either is edited.
+ */
+export interface CommunityHalt {
+  status: 'SUSPENDED' | 'INACTIVE' | 'REJECTED';
+  reason: string | null;
+  since: IsoDate | null;
+  message: string;
+}
+
+/** Set only when this officer's own administrative powers are paused. */
+export interface AdminAccessSuspension {
+  suspended: true;
+  since: IsoDate;
+  reason: string | null;
+  message: string;
+}
+
 export interface CommunitySummary {
   id: string;
+  /** The sayable reference — RC-2026-000123. */
+  publicId?: string | null;
   name: string;
   slug: string;
   role: string;
@@ -34,6 +59,11 @@ export interface CommunitySummary {
   title: string | null;
   membershipStatus: 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED' | 'LEFT';
   status: CommunityStatus;
+  verificationLevel?: CommunityVerificationLevel;
+  /** Null while the community is running. */
+  halt?: CommunityHalt | null;
+  /** Null unless this officer's powers have been suspended. */
+  adminAccess?: AdminAccessSuspension | null;
   memberCount: number;
   /** Verified but the public listing page is still a draft: the portal gates on this. */
   listingSetupRequired: boolean;
@@ -51,7 +81,14 @@ export interface PortalSession {
   community: CommunitySummary | null;
 }
 
-export type CommunityStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED' | 'REJECTED';
+export type CommunityStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED' | 'REJECTED' | 'INACTIVE';
+
+/**
+ * How far document verification has got. A separate axis from
+ * `CommunityStatus`: a fully verified community can still be suspended, and a
+ * suspended one does not lose the verification it earned.
+ */
+export type CommunityVerificationLevel = 'PENDING' | 'BASIC' | 'FULL';
 
 /** Size bands offered in the verification modal; mirrors the API's enum. */
 export const COMMUNITY_SIZE_BANDS = ['1-10', '11-50', '51-200', '201-1000', '1000+'] as const;

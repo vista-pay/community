@@ -6,6 +6,20 @@
 export const API_BASE = process.env.API_BASE ?? 'http://localhost:9100/api/v1';
 
 /**
+ * Which application this is, on every call to the API.
+ *
+ * The backend records it on the central activity stream so Super Admin
+ * oversight can say *where* an action came from. It has to be sent, not
+ * inferred: a community officer and a mobile customer present the same kind
+ * of token, so from the server's side the two are indistinguishable.
+ *
+ * Spread into every route handler's headers. Nothing is authorised off it —
+ * it is provenance for operators, and the API narrows it against the
+ * credential the request actually carried.
+ */
+export const SURFACE_HEADERS = { 'X-Rendi-Surface': 'COMMUNITY_PORTAL' } as const;
+
+/**
  * Confirms the configured API_BASE really is the Rendi API.
  *
  * Worth the one request at boot: when something else owns that port — an S3
