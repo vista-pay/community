@@ -39,6 +39,23 @@ export function BillingClient({
 }) {
   const communityId = useCommunityId();
   const { toast } = useToast();
+
+  /**
+   * When the period on screen actually ends.
+   *
+   * While a trial runs, the trial *is* the period — nothing is owed until it
+   * lapses. Rows written before that rule carry an end a month past the
+   * trial, which is how a three-day trial came to sit beside "31 days left".
+   * Taking whichever comes first keeps the card honest on those rows too,
+   * and is a no-op on every correctly written one.
+   */
+  const periodEnd =
+    subscription?.status === 'TRIALING' &&
+    subscription.trialEndsAt &&
+    new Date(subscription.trialEndsAt) < new Date(subscription.currentPeriodEnd)
+      ? subscription.trialEndsAt
+      : (subscription?.currentPeriodEnd ?? null);
+
   const [choosing, setChoosing] = useState<SubscriptionPlan | null>(null);
   const [cancelling, setCancelling] = useState(false);
   // The Enterprise conversation: a dialog, a message, a support ticket.
@@ -80,7 +97,7 @@ export function BillingClient({
           'info',
           cancelNow
             ? 'The plan has ended and this community is now on the base plan.'
-            : `The plan runs until ${subscription ? date(subscription.currentPeriodEnd) : 'the end of the period'} and will not renew.`,
+            : `The plan runs until ${periodEnd ? date(periodEnd) : 'the end of the period'} and will not renew.`,
         );
         setCancelling(false);
         window.location.reload();
@@ -307,16 +324,16 @@ export function BillingClient({
    * the bar can honestly show.
    */
   const periodPct = (() => {
-    if (!subscription) return 0;
+    if (!subscription || !periodEnd) return 0;
     const DAY = 86_400_000;
     const start = new Date(subscription.currentPeriodStart).getTime();
-    const end = new Date(subscription.currentPeriodEnd).getTime();
+    const end = new Date(periodEnd).getTime();
     if (end <= start) return 100;
     const totalDays = Math.max(1, Math.round((end - start) / DAY));
     const elapsedDays = Math.round((Date.now() - start) / DAY);
     return Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
   })();
-  const daysLeft = subscription ? Math.max(0, daysUntil(subscription.currentPeriodEnd)) : 0;
+  const daysLeft = periodEnd ? Math.max(0, daysUntil(periodEnd)) : 0;
 
   /** How long the tier stays open while an invoice goes unpaid. */
   const graceDaysLeft =
@@ -501,7 +518,9 @@ export function BillingClient({
               />
               <div className="mt-1.5 flex justify-between text-[11px] text-slate-400">
                 <span>{date(subscription.currentPeriodStart)}</span>
-                <span>{date(subscription.currentPeriodEnd)}</span>
+                {/* The same end the count above is derived from — the two
+                    sitting at either end of one bar must not disagree. */}
+                <span>{date(periodEnd)}</span>
               </div>
 
               <dl className="mt-4 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
@@ -592,7 +611,7 @@ export function BillingClient({
             {subscription.cancelAtPeriodEnd && (
               <div className="border-t border-slate-100 bg-amber-50/60 px-5 py-4">
                 <p className="text-[13px] text-amber-900">
-                  Cancelled. The plan runs until {date(subscription.currentPeriodEnd)} and will not
+                  Cancelled. The plan runs until {date(periodEnd)} and will not
                   renew; after that this community moves to the{' '}
                   {basePlan ? `${basePlan.name} plan` : 'base plan'}. Choosing a plan below undoes
                   it.
@@ -887,9 +906,11 @@ export function BillingClient({
             </>
           ) : choosing && isDowngrade(choosing) ? (
             <>
-              You keep {subscription.plan.name} until{' '}
-              {date(subscription.currentPeriodEnd)} — the period you have already paid for — and
-              move to {choosing.name} at{' '}
+              You keep {subscription.plan.name} until {date(periodEnd)} —{' '}
+              {subscription.status === 'TRIALING'
+                ? 'the trial you are on'
+                : 'the period you have already paid for'}{' '}
+              — and move to {choosing.name} at{' '}
               {money(choosing.monthlyPrice, choosing.currencyCode)} a month from then. Nothing is
               charged today, and you can drop the change any time before it takes effect.
             </>
@@ -978,11 +999,13 @@ export function BillingClient({
                 />
                 <span className="text-[13px]">
                   <span className="font-semibold text-navy-900">
-                    At the end of the paid period
+                    {subscription?.status === 'TRIALING'
+                      ? 'At the end of the trial'
+                      : 'At the end of the paid period'}
                   </span>
                   <span className="block text-slate-600">
                     Everything keeps working until{' '}
-                    {subscription ? date(subscription.currentPeriodEnd) : 'the period ends'}, then
+                    {periodEnd ? date(periodEnd) : 'the period ends'}, then
                     it stops renewing. Nothing further is charged.
                   </span>
                 </span>
