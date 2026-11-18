@@ -43,6 +43,27 @@ export function money(
 export const num = (n: number) => n.toLocaleString('en-NG');
 
 /**
+ * The civil calendar this platform keeps.
+ *
+ * These pages are rendered on the server and hydrated in the browser, so an
+ * unpinned formatter runs twice in two different zones: UTC in the container,
+ * the viewer's own on the client. A timestamp late in the UTC day then prints
+ * one date on first paint and another after hydration — and any "days left"
+ * derived from it inherits the same disagreement. Rendi's communities keep
+ * Nigerian time, so that is the calendar a day is counted on.
+ */
+const ZONE = 'Africa/Lagos';
+
+/** `YYYY-MM-DD` for a moment, as that calendar sees it. */
+const civilDay = (d: Date) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+
+/**
  * A date, or an em dash when there isn't one.
  *
  * Null and undefined are accepted deliberately, even where a type says they
@@ -60,9 +81,10 @@ export function date(
   if (d === null || d === undefined) return '—';
   const x = typeof d === 'string' ? new Date(d) : d;
   if (!(x instanceof Date) || Number.isNaN(x.getTime())) return '—';
-  if (style === 'time') return x.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (style === 'time') return x.toLocaleTimeString('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit' });
   if (style === 'datetime')
     return x.toLocaleString('en-GB', {
+      timeZone: ZONE,
       day: 'numeric',
       month: 'short',
       year: 'numeric',
@@ -70,8 +92,8 @@ export function date(
       minute: '2-digit',
     });
   if (style === 'long')
-    return x.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  return x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return x.toLocaleDateString('en-GB', { timeZone: ZONE, day: 'numeric', month: 'long', year: 'numeric' });
+  return x.toLocaleDateString('en-GB', { timeZone: ZONE, day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export function relative(d: string) {
@@ -107,5 +129,24 @@ export const fileSize = (bytes: number) =>
     ? `${(bytes / 1_048_576).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-export const daysUntil = (iso: string) =>
-  Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+/**
+ * Whole days between today and the given date, counted on the calendar.
+ *
+ * Counting raw elapsed milliseconds and rounding up is what made a trial
+ * ending tomorrow read "2 days left": any fraction of a day became a whole
+ * one. Worse, it could disagree with the date printed beside it — a period
+ * running to 19 Dec claimed 32 days left when the period was 30 days long.
+ *
+ * Both numbers come off the same calendar now, in the reader's own timezone,
+ * so the count and the date can never contradict each other. Today is 0,
+ * tomorrow is 1.
+ */
+export const daysUntil = (iso: string) => {
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return 0;
+  // Both ends reduced to a calendar date first, then compared as UTC
+  // midnights — the same calendar `date()` prints from, so the number and the
+  // date beside it can never contradict each other.
+  const asUtcMidnight = (d: Date) => Date.parse(`${civilDay(d)}T00:00:00Z`);
+  return Math.round((asUtcMidnight(target) - asUtcMidnight(new Date())) / 86_400_000);
+};

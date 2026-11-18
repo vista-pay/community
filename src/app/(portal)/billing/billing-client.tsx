@@ -427,8 +427,18 @@ export function BillingClient({
         </Callout>
       )}
 
-      {trialDays !== null && trialDays > 0 && subscription?.status === 'TRIALING' && (
-        <Callout tone="info" className="mb-6" title={`${trialDays} days left on your trial`}>
+      {/* Zero is the last day, not the end of it: the trial runs until the
+          instant shown, so the banner stays up for the whole of that day. */}
+      {trialDays !== null && trialDays >= 0 && subscription?.status === 'TRIALING' && (
+        <Callout
+          tone="info"
+          className="mb-6"
+          title={
+            trialDays === 0
+              ? 'Your trial ends today'
+              : `${trialDays} ${trialDays === 1 ? 'day' : 'days'} left on your trial`
+          }
+        >
           Nothing is charged until the trial ends on {date(subscription.trialEndsAt!)}.
         </Callout>
       )}
