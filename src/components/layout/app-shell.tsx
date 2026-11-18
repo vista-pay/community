@@ -58,6 +58,7 @@ import {
   KeyRound,
   Network,
   Webhook,
+  LifeBuoy,
 } from 'lucide-react';
 import { cn } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
@@ -69,6 +70,7 @@ import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
 import { RendiAiTrigger } from '@/components/rendi-ai/rendi-ai-trigger';
+import { SupportMenu } from '@/components/layout/support-menu';
 import { VerificationProfileModal } from '@/components/onboarding/verification-profile-modal';
 
 type NavigationCounts = NonNullable<DashboardData['navigationCounts']>;
@@ -84,7 +86,8 @@ type NavItem = {
   label: string;
   icon: typeof Users;
   exact?: boolean;
-  countKey: NavCountKey;
+  /** Omitted for items nothing can be waiting on — Support is a door, not a queue. */
+  countKey?: NavCountKey;
 };
 
 const NAV: Array<{ group: string; items: NavItem[] }> = [
@@ -226,6 +229,8 @@ const NAV: Array<{ group: string; items: NavItem[] }> = [
       // the Sidebar drops it when the probe says the feature is off, the same
       // way the Rendi AI dock is probed rather than flagged.
       { href: '/account-officer' as Route, label: 'Account officer', icon: Headset, countKey: 'accountOfficer' },
+      // Ungated: every community has the desk, whatever it pays.
+      { href: '/support' as Route, label: 'Support', icon: LifeBuoy },
       // Below Staff rather than inside Members: a migration is a one-time
       // project with its own lifecycle, not a way of adding a member.
       { href: '/migrate', label: 'Migrate', icon: Import, countKey: 'staff' },
@@ -340,7 +345,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           ? pathname === candidate.href
           : pathname === candidate.href || pathname.startsWith(`${candidate.href}/`),
       );
-    if (!item) return;
+    // Nothing to mark read on an item that never carried a count.
+    if (!item?.countKey) return;
     void portalApi
       .markNavigationRead(community.id, item.countKey)
       .then(() => refreshNavigation())
@@ -478,6 +484,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <CommunitySwitcher />
             <div className="flex-1" />
             {rendiAiEnabled && <RendiAiTrigger open={aiOpen} onToggle={toggleAi} />}
+            {/* Beside Rendi AI because they answer adjacent questions — one
+                explains the screen, the other reaches a person. */}
+            <SupportMenu hasAccountOfficer={features.includes('dedicated_support')} />
             <NotificationsMenu />
             <ProfileMenu />
           </div>
@@ -562,7 +571,7 @@ function Sidebar({
             )}
             <ul className="space-y-0.5">
               {group.items.map((item) => {
-                const count = counts?.[item.countKey] ?? 0;
+                const count = (item.countKey ? counts?.[item.countKey] : 0) ?? 0;
 
                 if (item.children?.length) {
                   return (
@@ -923,7 +932,7 @@ function NavDisclosure({
           {(item.children ?? []).map((child) => {
             const childActive =
               pathname === child.href || pathname.startsWith(`${child.href}/`);
-            const childCount = counts?.[child.countKey] ?? 0;
+            const childCount = (child.countKey ? counts?.[child.countKey] : 0) ?? 0;
             return (
               <li key={child.href}>
                 <Link

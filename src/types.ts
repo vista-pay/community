@@ -347,6 +347,57 @@ export interface AccountOfficerMessage {
 }
 
 
+// ───────────────────────────── Support ─────────────────────────────
+
+/**
+ * Support is the channel every community has, on any plan. The account
+ * officer is the named contact only some plans buy — a different thing, and
+ * deliberately a different screen.
+ */
+export interface SupportCategory {
+  code: string;
+  label: string;
+  icon: string;
+}
+
+export type SupportTicketStatus =
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'WAITING_FOR_INFO'
+  | 'RESOLVED'
+  | 'CLOSED';
+
+export interface SupportTicketSummary {
+  reference: string;
+  category: string;
+  categoryLabel?: string;
+  subcategory: string | null;
+  subject: string;
+  status: SupportTicketStatus;
+  priority: 'NORMAL' | 'HIGH' | 'URGENT';
+  assignedAgentName?: string | null;
+  lastActivityAt: IsoDate;
+  createdAt: IsoDate;
+}
+
+export interface SupportTicketMessage {
+  id: string;
+  /** USER is this community's side; anything else is Rendi's. */
+  authorType: string;
+  authorName: string;
+  body: string;
+  createdAt: IsoDate;
+  attachments?: AccountOfficerAttachment[];
+}
+
+export interface SupportTicketDetail extends SupportTicketSummary {
+  description: string;
+  transactionReference: string | null;
+  resolvedAt: IsoDate | null;
+  /** A closed ticket is read-only; the composer is hidden for it. */
+  canReply: boolean;
+  messages: SupportTicketMessage[];
+}
 
 // ───────────────────── Entitlements & branches ─────────────────────
 
@@ -369,8 +420,14 @@ export interface EntitlementsSummary {
 export interface CommunityBranch {
   id: string;
   name: string;
+  code: string | null;
   description: string | null;
+  city: string | null;
+  state: string | null;
+  isActive: boolean;
   memberCount: number;
+  staffCount: number;
+  manager: { officerId: string; memberId: string; name: string; title: string } | null;
   createdAt: IsoDate;
 }
 
@@ -380,12 +437,66 @@ export interface BranchesOverview {
   branches: CommunityBranch[];
   /** Active members not in any branch. */
   unassigned: number;
+  /**
+   * Branches this officer may change — null means every one of them. A branch
+   * manager sees the whole list but only holds their own.
+   */
+  manageable: string[] | null;
+}
+
+/** MANAGER is the one seat a branch can only have once. */
+export type BranchPost = 'MANAGER' | 'STAFF';
+
+export interface BranchSeat {
+  id: string;
+  post: BranchPost;
+  title: string;
+  role: { id: string; label: string };
+  memberId: string;
+  memberCode: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  /** A platform admin has paused this person's officer powers. */
+  powersPaused: boolean;
+  /** False when the seat-holder belongs to a different chapter. */
+  belongsToBranch: boolean;
+  appointedAt: IsoDate;
+  endedAt: IsoDate | null;
+  endReason: string | null;
+}
+
+export interface BranchDetail {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  lga: string | null;
+  meetingSchedule: string | null;
+  isActive: boolean;
+  memberCount: number;
+  createdAt: IsoDate;
+  manager: BranchSeat | null;
+  staff: BranchSeat[];
+  /** Ended seats, newest first — the handover trail. */
+  past: BranchSeat[];
+  canManage: boolean;
+  canManageAllBranches: boolean;
 }
 
 export interface BranchMemberRow {
   id: string;
   memberCode: string | null;
   name: string;
+  role: string;
+  /** MANAGER, STAFF or null — who runs the branch, on the roster. */
+  branchPost: BranchPost | null;
+  joinedAt: IsoDate;
 }
 
 

@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Network, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { Network, Pencil, Plus, Trash2, UserCircle2, Users } from 'lucide-react';
 import { useSession } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { useQuery } from '@/hooks/use-query';
@@ -23,6 +23,7 @@ import {
   EmptyState,
   Field,
   Input,
+  LinkButton,
   Modal,
   PageHeader,
   Skeleton,
@@ -119,15 +120,51 @@ export function BranchesClient({ initial }: { initial: BranchesOverview | null }
           {overview?.branches.map((branch) => (
             <Card key={branch.id}>
               <CardHeader
-                title={branch.name}
-                subtitle={branch.description ?? undefined}
+                title={
+                  <Link href={`/branches/${branch.id}`} className="hover:text-brand-700 hover:underline">
+                    {branch.name}
+                  </Link>
+                }
+                subtitle={
+                  [branch.code, [branch.city, branch.state].filter(Boolean).join(', ')]
+                    .filter(Boolean)
+                    .join(' · ') || branch.description || undefined
+                }
                 action={
                   <span className="tnum rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                     {branch.memberCount} member{branch.memberCount === 1 ? '' : 's'}
                   </span>
                 }
               />
+              {/* Who runs it, on the card. A branches list that shows only
+                  headcounts cannot answer the first question anybody has. */}
+              <div className="flex flex-wrap items-center gap-1.5 px-5 pb-3 text-[13px]">
+                {branch.manager ? (
+                  <>
+                    <UserCircle2 className="h-4 w-4 text-brand-600" aria-hidden />
+                    <b className="text-navy-900">{branch.manager.name}</b>
+                    <span className="text-slate-500">{branch.manager.title}</span>
+                  </>
+                ) : (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    No manager yet
+                  </span>
+                )}
+                {branch.staffCount > 0 && (
+                  <span className="text-slate-500">
+                    · {branch.staffCount} staff
+                  </span>
+                )}
+                {!branch.isActive && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    Closed
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2 px-5 pb-4">
+                <LinkButton size="sm" variant="blue" href={`/branches/${branch.id}`}>
+                  Open branch
+                </LinkButton>
                 <Button size="sm" variant="secondary" onClick={() => setRoster(branch)}>
                   <Users className="h-3.5 w-3.5" aria-hidden /> Members
                 </Button>

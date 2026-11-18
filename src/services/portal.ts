@@ -16,8 +16,11 @@ import type {
   AccountOfficerCard,
   AccountOfficerMessage,
   AccountingPeriod,
+  BranchDetail,
   BranchesOverview,
   BranchMemberRow,
+  BranchPost,
+  BranchSeat,
   CommunityBranch,
   EntitlementsSummary,
   ActivityFeed,
@@ -125,9 +128,33 @@ import type {
   CommunityRole,
   RoleInput,
   RolePermissionVocabulary,
+  SupportCategory,
+  SupportTicketDetail,
+  SupportTicketSummary,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
+
+/**
+ * The editable half of a branch.
+ *
+ * Every field optional, and the caller omits what the form did not touch:
+ * the API tests each with `!== undefined`, so an empty string clears a field
+ * and an absent key leaves it alone.
+ */
+type BranchSettingsBody = Partial<{
+  name: string;
+  code: string;
+  description: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  lga: string;
+  meetingSchedule: string;
+  isActive: boolean;
+}>;
 
 // ───────────────────────────── Overview ─────────────────────────────
 
@@ -838,19 +865,22 @@ export const portalApi = {
     ),
 
   // ───────────────────── Entitlements & branches ─────────────────────
+  //
+  // Every settings field is optional and omitted when untouched: the API
+  // tests each with `!== undefined`, so sending a key with an empty string
+  // clears that field and leaving it out keeps it.
 
   /** Read once by the shell to decide which plan-gated nav items exist. */
   entitlements: (communityId: string) =>
     get<EntitlementsSummary>(path(communityId, '/entitlements')),
 
   branches: (communityId: string) => get<BranchesOverview>(path(communityId, '/branches')),
-  createBranch: (communityId: string, body: { name: string; description?: string }) =>
+  branch: (communityId: string, branchId: string) =>
+    get<BranchDetail>(path(communityId, `/branches/${branchId}`)),
+  createBranch: (communityId: string, body: { name: string; description?: string; code?: string }) =>
     post<CommunityBranch>(path(communityId, '/branches'), body),
-  updateBranch: (
-    communityId: string,
-    branchId: string,
-    body: { name?: string; description?: string },
-  ) => patch<CommunityBranch>(path(communityId, `/branches/${branchId}`), body),
+  updateBranch: (communityId: string, branchId: string, body: BranchSettingsBody) =>
+    patch<CommunityBranch>(path(communityId, `/branches/${branchId}`), body),
   deleteBranch: (communityId: string, branchId: string) =>
     del<{ deleted: true }>(path(communityId, `/branches/${branchId}`)),
   branchMembers: (communityId: string, branchId: string) =>
@@ -860,6 +890,33 @@ export const portalApi = {
     communityId: string,
     body: { memberIds: string[]; branchId: string | null },
   ) => post<{ assigned: number }>(path(communityId, '/branches/assignments'), body),
+  /**
+   * Seat a branch manager or branch staff. The role carries the permissions
+   * and the branch bounds them, so this is the only place branch authority
+   * is granted.
+   */
+  appointBranchOfficer: (
+    communityId: string,
+    branchId: string,
+    body: {
+      memberId: string;
+      roleId: string;
+      post: BranchPost;
+      title?: string;
+      moveMemberToBranch?: boolean;
+    },
+  ) => post<BranchSeat>(path(communityId, `/branches/${branchId}/officers`), body),
+  /** Ends the seat with a reason; the person keeps membership and role. */
+  endBranchOfficer: (
+    communityId: string,
+    branchId: string,
+    officerId: string,
+    reason: string,
+  ) =>
+    del<{ ended: true; name: string }>(
+      path(communityId, `/branches/${branchId}/officers/${officerId}`),
+      { reason },
+    ),
 
   // ───────────────────────── Account officer ─────────────────────────
 
@@ -884,6 +941,44 @@ export const portalApi = {
       text,
       ...(attachments.length ? { attachments } : {}),
     }),
+
+  // ───────────────────────────── Support ─────────────────────────────
+  //
+  // Not community-scoped in the URL: a ticket belongs to a person who names a
+  // community, and the API decides from the membership whether they may. The
+  // community id therefore travels as a parameter, not a path segment.
+
+  supportCategories: () =>
+    get<SupportCategory[]>('/support/ticket-categories', { surface: 'community' }),
+
+  supportTickets: (communityId: string, status?: string) =>
+    get<SupportTicketSummary[]>('/support/tickets', {
+      communityId,
+      ...(status ? { status } : {}),
+    }),
+
+  supportTicket: (reference: string) =>
+    get<SupportTicketDetail>(`/support/tickets/${reference}`),
+
+  raiseSupportTicket: (
+    communityId: string,
+    body: {
+      category: string;
+      subject: string;
+      description: string;
+      priority?: 'NORMAL' | 'HIGH' | 'URGENT';
+      attachments?: UploadedFile[];
+    },
+  ) => post<SupportTicketDetail>('/support/tickets', { ...body, communityId }),
+
+  replyToSupportTicket: (reference: string, body: string, attachments: UploadedFile[] = []) =>
+    post<SupportTicketDetail>(`/support/tickets/${reference}/reply`, {
+      body,
+      ...(attachments.length ? { attachments } : {}),
+    }),
+
+  closeSupportTicket: (reference: string) =>
+    post<SupportTicketDetail>(`/support/tickets/${reference}/close`, {}),
 
   // ───────────────────────── Notifications & settings ─────────────────────────
 
