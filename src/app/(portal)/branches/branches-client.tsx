@@ -28,7 +28,14 @@ import {
   PageHeader,
   Skeleton,
 } from '@/components/ui';
-import type { BranchMemberRow, BranchesOverview, CommunityBranch, MemberRow } from '@/types';
+import { money } from '@/lib/format';
+import type {
+  BranchMemberRow,
+  BranchesOverview,
+  BranchPerformance,
+  CommunityBranch,
+  MemberRow,
+} from '@/types';
 
 export function BranchesClient({ initial }: { initial: BranchesOverview | null }) {
   const { community } = useSession();
@@ -98,6 +105,8 @@ export function BranchesClient({ initial }: { initial: BranchesOverview | null }
           </Button>
         }
       />
+
+      <ConsolidatedPanel communityId={communityId} />
 
       {overview && overview.unassigned > 0 && overview.branches.length > 0 && (
         <Callout tone="info" className="mb-5">
@@ -424,5 +433,95 @@ function RosterModal({
         </ul>
       )}
     </Modal>
+  );
+}
+
+/**
+ * Every branch side by side — the head office's consolidated view.
+ *
+ * The totals row is summed from the same rows the table renders rather than
+ * being its own query, so the bottom line can never disagree with the column
+ * above it. Members in no branch are reported too: a table whose rows sum to
+ * less than the community is a table that hides people.
+ *
+ * A branch officer sees the same shape with only their own chapters in it,
+ * which is why this is not gated away from them — comparing the branches you
+ * run is the point.
+ */
+function ConsolidatedPanel({ communityId }: { communityId: string }) {
+  const { data } = useQuery<BranchPerformance | null>(
+    () => (communityId ? portalApi.branchPerformance(communityId) : Promise.resolve(null)),
+    [communityId],
+    { enabled: Boolean(communityId) },
+  );
+
+  if (!data?.enabled || data.branches.length === 0) return null;
+
+  const columns: Array<[string, (row: BranchPerformance['branches'][number]) => string]> = [
+    ['Members', (row) => row.members.total.toLocaleString()],
+    ['Expected', (row) => money(row.contributions.expected)],
+    ['Collected', (row) => money(row.contributions.collected)],
+    ['Rate', (row) => `${row.contributions.collectionRate}%`],
+    ['Overdue', (row) => row.contributions.overdue.toLocaleString()],
+    ['Savings', (row) => money(row.savings.balance)],
+    ['Loans out', (row) => money(row.loans.outstanding)],
+    ['Spending', (row) => money(row.expenses.paidTotal)],
+  ];
+
+  return (
+    <Card className="mb-5 overflow-hidden p-0">
+      <CardHeader
+        title={data.isConsolidated ? 'All branches' : 'The branches you run'}
+        subtitle={`Collections and balances across ${data.branches.length} branch${data.branches.length === 1 ? '' : 'es'}`}
+      />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-[13px]">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-2.5 font-semibold">Branch</th>
+              {columns.map(([label]) => (
+                <th key={label} className="px-4 py-2.5 text-right font-semibold">{label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {data.branches.map((row) => (
+              <tr key={row.branch.id} className="hover:bg-slate-50/70">
+                <td className="px-4 py-2.5">
+                  <Link href={`/branches/${row.branch.id}`} className="font-semibold text-navy-900 hover:text-brand-700 hover:underline">
+                    {row.branch.name}
+                  </Link>
+                  {!row.branch.isActive && <span className="ml-1.5 text-[11px] text-slate-400">closed</span>}
+                </td>
+                {columns.map(([label, pick]) => (
+                  <td key={label} className="tnum px-4 py-2.5 text-right text-slate-700">{pick(row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          {data.totals && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-navy-900">
+              <tr>
+                <td className="px-4 py-2.5">All branches</td>
+                <td className="tnum px-4 py-2.5 text-right">{data.totals.members.total.toLocaleString()}</td>
+                <td className="tnum px-4 py-2.5 text-right">{money(data.totals.contributions.expected)}</td>
+                <td className="tnum px-4 py-2.5 text-right">{money(data.totals.contributions.collected)}</td>
+                <td className="tnum px-4 py-2.5 text-right">{data.totals.contributions.collectionRate}%</td>
+                <td className="tnum px-4 py-2.5 text-right">{data.totals.contributions.overdue.toLocaleString()}</td>
+                <td className="tnum px-4 py-2.5 text-right">{money(data.totals.savings.balance)}</td>
+                <td className="tnum px-4 py-2.5 text-right">{money(data.totals.loans.outstanding)}</td>
+                <td className="tnum px-4 py-2.5 text-right">{money(data.totals.expenses.paidTotal)}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {data.unassigned !== null && data.unassigned > 0 && (
+        <p className="border-t border-slate-100 bg-amber-50 px-4 py-2.5 text-[13px] text-amber-900">
+          {data.unassigned} active member{data.unassigned === 1 ? ' is' : 's are'} in no branch, so
+          they appear in none of these rows.
+        </p>
+      )}
+    </Card>
   );
 }

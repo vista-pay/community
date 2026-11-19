@@ -517,6 +517,70 @@ export interface BranchDetail {
   canManageAllBranches: boolean;
 }
 
+/** One branch's figures — the same shape the consolidated total uses. */
+export interface BranchFigures {
+  members: { total: number; officers: number };
+  contributions: {
+    expected: string;
+    collected: string;
+    outstanding: string;
+    /** Percent, one decimal place. */
+    collectionRate: number;
+    overdue: number;
+  };
+  savings: { accounts: number; balance: string };
+  loans: { open: number; awaitingRecommendation: number; live: number; outstanding: string };
+  expenses: { pending: number; approved: number; paid: number; paidTotal: string };
+}
+
+export interface BranchReport extends BranchFigures {
+  branch: { id: string; name: string; code: string | null; isActive: boolean };
+  /** Money figures are bounded by this; headcounts and balances are as of now. */
+  period: { from: IsoDate; to: IsoDate };
+}
+
+/** Every branch side by side, with the head office's total under them. */
+export interface BranchPerformance {
+  enabled: boolean;
+  period: { from: IsoDate; to: IsoDate };
+  branches: Array<
+    BranchFigures & {
+      branch: {
+        id: string;
+        name: string;
+        code: string | null;
+        isActive: boolean;
+        city: string | null;
+        state: string | null;
+      };
+    }
+  >;
+  totals: BranchFigures | null;
+  /** Active members in no branch at all. Null when the viewer sees only theirs. */
+  unassigned: number | null;
+  /** False when this is one officer's slice rather than the whole community. */
+  isConsolidated?: boolean;
+}
+
+export interface BranchLoanRow {
+  id: string;
+  reference: string;
+  status: string;
+  principal: string;
+  totalRepayable: string;
+  outstanding: string;
+  currencyCode: string;
+  termDays: number;
+  purpose: string | null;
+  appliedAt: IsoDate;
+  dueDate: IsoDate | null;
+  recommendation: 'RECOMMENDED' | 'DECLINED' | null;
+  recommendedAt: IsoDate | null;
+  recommendationNotes: string | null;
+  awaitingRecommendation: boolean;
+  borrower: { memberId: string; memberCode: string | null; userId: string; name: string } | null;
+}
+
 export interface BranchMemberRow {
   id: string;
   memberCode: string | null;

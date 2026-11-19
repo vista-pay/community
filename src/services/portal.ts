@@ -18,6 +18,9 @@ import type {
   AccountingPeriod,
   BranchDetail,
   BranchesOverview,
+  BranchLoanRow,
+  BranchPerformance,
+  BranchReport,
   BranchMemberRow,
   BranchPost,
   BranchSeat,
@@ -877,6 +880,28 @@ export const portalApi = {
   branches: (communityId: string) => get<BranchesOverview>(path(communityId, '/branches')),
   branch: (communityId: string, branchId: string) =>
     get<BranchDetail>(path(communityId, `/branches/${branchId}`)),
+  /** One branch's members, collections, savings, loans and spending. */
+  branchReport: (communityId: string, branchId: string, window: { from?: string; to?: string } = {}) =>
+    get<BranchReport>(path(communityId, `/branches/${branchId}/report`), window),
+  /**
+   * Every branch side by side. Lives outside the /branches path because a
+   * literal segment under it would be ambiguous with a branch id.
+   */
+  branchPerformance: (communityId: string, window: { from?: string; to?: string } = {}) =>
+    get<BranchPerformance>(path(communityId, '/branch-performance'), window),
+  branchLoans: (communityId: string, branchId: string) =>
+    get<BranchLoanRow[]>(path(communityId, `/branches/${branchId}/loans`)),
+  /** Advice, not a decision — the committee still approves. */
+  recommendBranchLoan: (
+    communityId: string,
+    branchId: string,
+    loanId: string,
+    body: { recommend: boolean; notes?: string },
+  ) =>
+    post<{ id: string; recommendation: 'RECOMMENDED' | 'DECLINED' }>(
+      path(communityId, `/branches/${branchId}/loans/${loanId}/recommendation`),
+      body,
+    ),
   createBranch: (communityId: string, body: { name: string; description?: string; code?: string }) =>
     post<CommunityBranch>(path(communityId, '/branches'), body),
   updateBranch: (communityId: string, branchId: string, body: BranchSettingsBody) =>

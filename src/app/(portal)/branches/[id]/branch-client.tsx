@@ -52,9 +52,12 @@ import {
   Skeleton,
   Textarea,
 } from '@/components/ui';
+import { cn, money } from '@/lib/format';
 import type {
   BranchDetail,
+  BranchLoanRow,
   BranchMemberRow,
+  BranchReport,
   BranchPost,
   BranchSeat,
   MemberRow,
@@ -238,6 +241,10 @@ export function BranchClient({ initial, branchId }: { initial: BranchDetail; bra
               </p>
             </div>
           </Card>
+
+          <BranchPerformancePanel communityId={communityId} branch={branch} />
+
+          <BranchLoansPanel communityId={communityId} branch={branch} />
 
           <BranchRoster communityId={communityId} branch={branch} />
 
@@ -864,5 +871,291 @@ function PickMembersModal({
         </ul>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * What the branch has done, in the numbers the head office compares.
+ *
+ * Expected *and* collected, side by side: a collected total on its own cannot
+ * say whether a branch is healthy, which is the question being asked. Money
+ * figures are bounded by the period; headcounts and balances are as of now,
+ * and the panel says so rather than leaving the reader to assume.
+ */
+function BranchPerformancePanel({
+  communityId,
+  branch,
+}: {
+  communityId: string;
+  branch: BranchDetail;
+}) {
+  const { data: report } = useQuery<BranchReport | null>(
+    () => portalApi.branchReport(communityId, branch.id),
+    [communityId, branch.id],
+  );
+
+  if (!report) {
+    return (
+      <Card>
+        <CardHeader title="Branch performance" />
+        <div className="px-5 pb-5">
+          <Skeleton className="h-24" />
+        </div>
+      </Card>
+    );
+  }
+
+  const { contributions, savings, loans, expenses, members } = report;
+  const rate = contributions.collectionRate;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Branch performance"
+        subtitle={`Money figures cover ${date(report.period.from)} – ${date(report.period.to)}; balances and headcount are as of now`}
+      />
+      <div className="grid gap-4 px-5 pb-5 sm:grid-cols-2 xl:grid-cols-4">
+        <Figure
+          label="Collected"
+          value={money(contributions.collected)}
+          hint={`of ${money(contributions.expected)} expected`}
+          tone={rate >= 80 ? 'good' : rate >= 50 ? 'warn' : 'bad'}
+          footer={`${rate}% collection rate`}
+        />
+        <Figure
+          label="Outstanding"
+          value={money(contributions.outstanding)}
+          hint={`${contributions.overdue} overdue obligation${contributions.overdue === 1 ? '' : 's'}`}
+          tone={contributions.overdue > 0 ? 'warn' : 'good'}
+        />
+        <Figure
+          label="Savings held"
+          value={money(savings.balance)}
+          hint={`${savings.accounts} account${savings.accounts === 1 ? '' : 's'}`}
+        />
+        <Figure
+          label="Loans outstanding"
+          value={money(loans.outstanding)}
+          hint={`${loans.live} running · ${loans.open} awaiting decision`}
+          tone={loans.awaitingRecommendation > 0 ? 'warn' : undefined}
+          footer={
+            loans.awaitingRecommendation > 0
+              ? `${loans.awaitingRecommendation} need your recommendation`
+              : undefined
+          }
+        />
+        <Figure
+          label="Spending"
+          value={money(expenses.paidTotal)}
+          hint={`${expenses.pending} awaiting approval · ${expenses.approved} approved`}
+        />
+        <Figure
+          label="Members"
+          value={members.total.toLocaleString()}
+          hint={`${members.officers} on the branch leadership`}
+        />
+      </div>
+      <p className="border-t border-slate-100 px-5 py-3 text-[13px] leading-relaxed text-slate-500">
+        These are the community&rsquo;s own records filtered to this branch, not a separate set of
+        books — so the head office&rsquo;s totals and this page can never disagree.
+      </p>
+    </Card>
+  );
+}
+
+function Figure({
+  label,
+  value,
+  hint,
+  footer,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  footer?: string;
+  tone?: 'good' | 'warn' | 'bad';
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p
+        className={cn(
+          'tnum mt-1 text-lg font-semibold',
+          tone === 'good' && 'text-emerald-700',
+          tone === 'warn' && 'text-amber-700',
+          tone === 'bad' && 'text-red-700',
+          !tone && 'text-navy-900',
+        )}
+      >
+        {value}
+      </p>
+      {hint && <p className="mt-0.5 text-[13px] text-slate-500">{hint}</p>}
+      {footer && <p className="mt-1 text-[11px] font-semibold text-slate-500">{footer}</p>}
+    </div>
+  );
+}
+
+/**
+ * The branch's say on its members' loans.
+ *
+ * A recommendation is advice attached to the application — it changes no
+ * status and moves no money. The committee still decides, and sees what the
+ * officer who knows the borrower wrote. Declining requires a reason, because
+ * "not recommended" with no reason tells the committee nothing they can act
+ * on.
+ */
+function BranchLoansPanel({
+  communityId,
+  branch,
+}: {
+  communityId: string;
+  branch: BranchDetail;
+}) {
+  const { toast } = useToast();
+  const { data: loans, refresh } = useQuery<BranchLoanRow[]>(
+    () => portalApi.branchLoans(communityId, branch.id),
+    [communityId, branch.id],
+  );
+  const [advising, setAdvising] = useState<{ loan: BranchLoanRow; recommend: boolean } | null>(null);
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    if (!advising) return;
+    setBusy(true);
+    setError('');
+    try {
+      await portalApi.recommendBranchLoan(communityId, branch.id, advising.loan.id, {
+        recommend: advising.recommend,
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+      });
+      toast(advising.recommend ? 'Recommended to the committee.' : 'Recorded — not recommended.');
+      setAdvising(null);
+      setNotes('');
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'That did not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const waiting = (loans ?? []).filter((loan) => loan.awaitingRecommendation);
+  const rest = (loans ?? []).filter((loan) => !loan.awaitingRecommendation);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Loan applications"
+        subtitle="From this branch's members — the branch advises, the committee decides"
+        action={
+          waiting.length > 0 && <Badge tone="amber">{waiting.length} awaiting you</Badge>
+        }
+      />
+      <div className="space-y-3 px-5 pb-5">
+        {error && <Callout tone="danger">{error}</Callout>}
+        {!loans && <Skeleton className="h-20" />}
+        {loans && loans.length === 0 && (
+          <p className="text-[13px] text-slate-500">
+            Nobody in this branch has applied for a loan yet.
+          </p>
+        )}
+
+        {[...waiting, ...rest].map((loan) => (
+          <div key={loan.id} className="rounded-xl border border-slate-200 p-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <b className="text-navy-900">{loan.borrower?.name ?? 'A member'}</b>
+              <span className="tnum text-[13px] text-slate-600">
+                {money(loan.principal, loan.currencyCode)}
+              </span>
+              <Badge tone={loan.status === 'REJECTED' ? 'red' : loan.status === 'SUBMITTED' ? 'amber' : 'slate'}>
+                {loan.status.toLowerCase().replaceAll('_', ' ')}
+              </Badge>
+              {loan.recommendation && (
+                <Badge tone={loan.recommendation === 'RECOMMENDED' ? 'green' : 'red'}>
+                  {loan.recommendation === 'RECOMMENDED' ? 'Branch recommends' : 'Branch declined'}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-[13px] text-slate-500">
+              {loan.reference} · {loan.termDays} days · applied {date(loan.appliedAt)}
+              {loan.purpose ? ` · ${loan.purpose}` : ''}
+            </p>
+            {loan.recommendationNotes && (
+              <p className="mt-1.5 rounded-lg bg-slate-50 p-2.5 text-[13px] leading-relaxed text-slate-600">
+                {loan.recommendationNotes}
+              </p>
+            )}
+            {branch.canManage && loan.awaitingRecommendation && (
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="blue"
+                  onClick={() => { setError(''); setNotes(''); setAdvising({ loan, recommend: true }); }}
+                >
+                  Recommend
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => { setError(''); setNotes(''); setAdvising({ loan, recommend: false }); }}
+                >
+                  Do not recommend
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {advising && (
+        <Modal
+          open
+          onClose={() => setAdvising(null)}
+          title={
+            advising.recommend
+              ? `Recommend ${advising.loan.borrower?.name ?? 'this application'}`
+              : `Do not recommend ${advising.loan.borrower?.name ?? 'this application'}`
+          }
+          description="This is advice to the committee. It changes nothing about the application on its own — they still decide, and they read what you write here."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setAdvising(null)} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                variant={advising.recommend ? 'blue' : 'danger'}
+                loading={busy}
+                disabled={!advising.recommend && notes.trim().length === 0}
+                onClick={() => void save()}
+              >
+                {advising.recommend ? 'Recommend' : 'Record'}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {error && <Callout tone="danger">{error}</Callout>}
+            <Field
+              label="What should the committee know?"
+              htmlFor="rec-notes"
+              required={!advising.recommend}
+              optional={advising.recommend}
+              hint="Attendance, contribution history, what the money is for — whatever the branch knows and the committee cannot see."
+            >
+              <Textarea
+                id="rec-notes"
+                autoFocus
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Known to the branch, contributions up to date…"
+              />
+            </Field>
+          </div>
+        </Modal>
+      )}
+    </Card>
   );
 }
