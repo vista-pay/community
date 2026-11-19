@@ -611,7 +611,13 @@ function AppointModal({
   // in almost every case. Before the branch posts existed this box opened on
   // "Choose a role…" above a list of community-wide offices, and the only way
   // to fill it was to pick one that meant something else.
-  const branchPosts = branch.assignableRoles.filter((role) => role.isBranchRole);
+  // Defaulted, not assumed. During a deploy the page can be newer than the
+  // API that answers it, and a dialog that throws on a field the server has
+  // not started sending takes the whole branch page down with it — which is
+  // exactly what happened: "Cannot read properties of undefined (reading
+  // 'filter')" replaced the page with the error boundary.
+  const roles = branch.assignableRoles ?? [];
+  const branchPosts = roles.filter((role) => role.isBranchRole);
   const preferred =
     branchPosts.find((role) => role.name === (post === 'MANAGER' ? 'BRANCH_MANAGER' : 'BRANCH_SECRETARY')) ??
     branchPosts[0];
@@ -626,9 +632,7 @@ function AppointModal({
 
   // The plain member role grants nothing, so a manager bounded by it could
   // not manage. The API refuses it; saying so here saves the round trip.
-  const assignable = branch.assignableRoles.filter(
-    (role) => post === 'STAFF' || role.name !== 'MEMBER',
-  );
+  const assignable = roles.filter((role) => post === 'STAFF' || role.name !== 'MEMBER');
   const chosenRole = assignable.find((role) => role.id === roleId);
   const communityWide = assignable.filter((role) => !role.isBranchRole);
 
@@ -666,6 +670,12 @@ function AppointModal({
     >
       <div className="space-y-4">
         {error && <Callout tone="danger">{error}</Callout>}
+        {assignable.length === 0 && (
+          <Callout tone="warning">
+            No roles came back for this branch, so there is nothing to bound a seat to. Reload the
+            page — if it persists, the portal is newer than the server answering it.
+          </Callout>
+        )}
 
         <Field label="Who" htmlFor="ap-search" required hint="Any active member of the community.">
           <Input
