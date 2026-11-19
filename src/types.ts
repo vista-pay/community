@@ -380,10 +380,29 @@ export interface SupportTicketSummary {
   createdAt: IsoDate;
 }
 
+/**
+ * What `GET /support/tickets` actually answers.
+ *
+ * The list is nested under `tickets` with the counts beside it. Typing the
+ * call as a bare array is what produced "U.map is not a function" on the
+ * support screen: the client read the envelope as the list.
+ */
+export interface SupportTicketList {
+  total: number;
+  counts: {
+    submitted: number;
+    underReview: number;
+    waitingForInfo: number;
+    resolved: number;
+    closed: number;
+  };
+  tickets: SupportTicketSummary[];
+}
+
 export interface SupportTicketMessage {
   id: string;
-  /** USER is this community's side; anything else is Rendi's. */
-  authorType: string;
+  /** CUSTOMER is this community's side; AGENT is Rendi's. */
+  authorType: 'CUSTOMER' | 'AGENT';
   authorName: string;
   body: string;
   createdAt: IsoDate;
@@ -485,6 +504,15 @@ export interface BranchDetail {
   staff: BranchSeat[];
   /** Ended seats, newest first — the handover trail. */
   past: BranchSeat[];
+  /** Roles that can bound a seat here, branch posts first. */
+  assignableRoles: Array<{
+    id: string;
+    name: string;
+    label: string;
+    description: string | null;
+    /** A post that only means something inside a branch. */
+    isBranchRole: boolean;
+  }>;
   canManage: boolean;
   canManageAllBranches: boolean;
 }

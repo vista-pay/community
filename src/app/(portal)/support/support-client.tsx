@@ -38,8 +38,8 @@ import { cn, date, fileSize, relative } from '@/lib/format';
 import type {
   SupportCategory,
   SupportTicketDetail,
+  SupportTicketList,
   SupportTicketStatus,
-  SupportTicketSummary,
 } from '@/types';
 
 /** What each state means to the person waiting, not to the desk. */
@@ -71,7 +71,7 @@ export function SupportClient() {
     data: tickets,
     loading,
     refresh: refreshList,
-  } = useQuery<SupportTicketSummary[] | null>(
+  } = useQuery<SupportTicketList | null>(
     () => (communityId ? portalApi.supportTickets(communityId, scope) : Promise.resolve(null)),
     [communityId, scope],
     { enabled: Boolean(communityId) },
@@ -87,7 +87,10 @@ export function SupportClient() {
     { enabled: Boolean(openRef) },
   );
 
-  const rows = tickets ?? [];
+  // The API answers an envelope — `{ total, counts, tickets }` — and reading
+  // it as the list itself is what crashed this page with "U.map is not a
+  // function".
+  const rows = tickets?.tickets ?? [];
 
   return (
     <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden lg:h-[calc(100dvh-8rem)]">
@@ -299,8 +302,8 @@ function TicketThread({
           text: message.body,
           at: message.createdAt,
           // This community wrote it on the right; Rendi answers on the left.
-          mine: message.authorType === 'USER',
-          author: message.authorType === 'USER' ? message.authorName : 'Rendi support',
+          mine: message.authorType === 'CUSTOMER',
+          author: message.authorType === 'CUSTOMER' ? message.authorName : 'Rendi support',
           attachments: message.attachments,
         }))}
         emptyState={

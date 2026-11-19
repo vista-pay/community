@@ -130,7 +130,7 @@ import type {
   RolePermissionVocabulary,
   SupportCategory,
   SupportTicketDetail,
-  SupportTicketSummary,
+  SupportTicketList,
 } from '@/types';
 
 const path = (communityId: string, suffix = '') => `/communities/${communityId}${suffix}`;
@@ -951,8 +951,9 @@ export const portalApi = {
   supportCategories: () =>
     get<SupportCategory[]>('/support/ticket-categories', { surface: 'community' }),
 
+  /** Returns `{ total, counts, tickets }` — the list is nested, not bare. */
   supportTickets: (communityId: string, status?: string) =>
-    get<SupportTicketSummary[]>('/support/tickets', {
+    get<SupportTicketList>('/support/tickets', {
       communityId,
       ...(status ? { status } : {}),
     }),

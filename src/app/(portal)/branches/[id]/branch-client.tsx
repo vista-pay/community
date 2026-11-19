@@ -57,7 +57,6 @@ import type {
   BranchMemberRow,
   BranchPost,
   BranchSeat,
-  CommunityRole,
   MemberRow,
 } from '@/types';
 
@@ -598,11 +597,18 @@ function AppointModal({
   }) => void;
 }) {
   const { data: members } = useQuery<MemberRow[]>(() => portalApi.members(communityId), [communityId]);
-  const { data: roles } = useQuery<CommunityRole[]>(() => portalApi.roles(communityId), [communityId]);
 
   const [query, setQuery] = useState('');
   const [memberId, setMemberId] = useState('');
-  const [roleId, setRoleId] = useState('');
+  // Defaults to Branch manager / the first branch post, which is the answer
+  // in almost every case. Before the branch posts existed this box opened on
+  // "Choose a role…" above a list of community-wide offices, and the only way
+  // to fill it was to pick one that meant something else.
+  const branchPosts = branch.assignableRoles.filter((role) => role.isBranchRole);
+  const preferred =
+    branchPosts.find((role) => role.name === (post === 'MANAGER' ? 'BRANCH_MANAGER' : 'BRANCH_SECRETARY')) ??
+    branchPosts[0];
+  const [roleId, setRoleId] = useState(preferred?.id ?? '');
   const [title, setTitle] = useState('');
   const [move, setMove] = useState(true);
 
@@ -613,8 +619,11 @@ function AppointModal({
 
   // The plain member role grants nothing, so a manager bounded by it could
   // not manage. The API refuses it; saying so here saves the round trip.
-  const assignable = (roles ?? []).filter((role) => post === 'STAFF' || role.name !== 'MEMBER');
+  const assignable = branch.assignableRoles.filter(
+    (role) => post === 'STAFF' || role.name !== 'MEMBER',
+  );
   const chosenRole = assignable.find((role) => role.id === roleId);
+  const communityWide = assignable.filter((role) => !role.isBranchRole);
 
   return (
     <Modal
@@ -688,17 +697,30 @@ function AppointModal({
           required
           hint={
             chosenRole
-              ? `Inside ${branch.name} only: ${chosenRole.permissions
-                  .map((p) => `${p.resource === '*' ? 'everything' : p.resource}:${p.action}`)
-                  .join(', ') || 'no permissions'}`
-              : 'Pick the community role whose permissions this seat should carry.'
+              ? `${chosenRole.description ?? chosenRole.label} — inside ${branch.name} only.`
+              : 'Branch posts are scoped to this chapter. A community-wide office can bound a seat too, and is still limited to this branch.'
           }
         >
           <Select id="ap-role" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
             <option value="">Choose a role…</option>
-            {assignable.map((role) => (
-              <option key={role.id} value={role.id}>{role.label}</option>
-            ))}
+            {/* Branch posts first and labelled as such. A community-wide
+                office can still bound a seat — a treasurer running a branch
+                is a real arrangement — but it should be the deliberate
+                choice, not the only one on offer. */}
+            {branchPosts.length > 0 && (
+              <optgroup label="Branch posts">
+                {branchPosts.map((role) => (
+                  <option key={role.id} value={role.id}>{role.label}</option>
+                ))}
+              </optgroup>
+            )}
+            {communityWide.length > 0 && (
+              <optgroup label="Community-wide posts (bounded to this branch)">
+                {communityWide.map((role) => (
+                  <option key={role.id} value={role.id}>{role.label}</option>
+                ))}
+              </optgroup>
+            )}
           </Select>
         </Field>
 
