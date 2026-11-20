@@ -252,8 +252,11 @@ function TicketThread({
   const [pending, setPending] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
+  // Defensive on `description`: it is required by the type, but a field the
+  // API forgets to send must blank one block, not take the whole page down
+  // with it — which is exactly what it did before.
   const openingMessage = ticket.messages[0]?.authorType === 'CUSTOMER' &&
-    ticket.messages[0].body.trim() === ticket.description.trim()
+    ticket.messages[0].body.trim() === (ticket.description ?? '').trim()
       ? ticket.messages[0]
       : null;
   const conversation = openingMessage ? ticket.messages.slice(1) : ticket.messages;

@@ -23,19 +23,48 @@ import { useQuery } from '@/hooks/use-query';
 import { useRealtimeEvent } from '@/hooks/use-realtime';
 import { portalApi } from '@/services/portal';
 import type { NotificationItem } from '@/types';
+import type { AccountOfficerCard } from '@/types';
+import { useSession } from '@/components/providers/session-provider';
 
 export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean }) {
   const pathname = usePathname();
+  const { community } = useSession();
+  const communityId = community?.id ?? '';
   const active = pathname.startsWith('/support') || pathname.startsWith('/account-officer');
   const { data, refresh } = useQuery<NotificationItem[]>(() => portalApi.notifications(), []);
+  const { data: officerCard, refresh: refreshOfficer } = useQuery<AccountOfficerCard | null>(
+    () =>
+      communityId && hasAccountOfficer
+        ? portalApi.accountOfficer(communityId)
+        : Promise.resolve(null),
+    [communityId, hasAccountOfficer, pathname],
+    { enabled: Boolean(communityId && hasAccountOfficer) },
+  );
   const supportAlerts = (data ?? []).filter((item) => item.type === 'SUPPORT' && !item.isRead);
+  const officerAlerts = officerCard?.unread ?? 0;
+  const unreadHelp = supportAlerts.length + officerAlerts;
+  const helpActive = unreadHelp > 0;
 
   useRealtimeEvent('support.updated', () => void refresh());
+  useRealtimeEvent(
+    'account-officer.message',
+    () => void refreshOfficer(),
+    Boolean(communityId && hasAccountOfficer),
+  );
 
   async function openSupport(close: () => void) {
     close();
     await Promise.all(supportAlerts.map((item) => portalApi.markNotificationRead(item.id)));
     if (supportAlerts.length) await refresh();
+  }
+
+  async function openAccountOfficer(close: () => void) {
+    close();
+    if (!communityId || !officerAlerts) return;
+    // Reading the thread is the server-side read receipt. Doing it here makes
+    // the shared Help indicator clear immediately as navigation begins.
+    await portalApi.accountOfficerThread(communityId);
+    await refreshOfficer();
   }
 
   return (
@@ -46,19 +75,23 @@ export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean 
         <button
           type="button"
           onClick={toggle}
-          aria-label="Help and support"
+          aria-label={`Help and support${unreadHelp ? `, ${unreadHelp} new update${unreadHelp === 1 ? '' : 's'}` : ''}`}
           aria-expanded={open}
           className={cn(
-            'flex h-10 items-center gap-2 rounded-lg px-2.5 focus-ring transition',
-            open || active
+            'relative flex h-10 items-center gap-2 rounded-lg px-2.5 focus-ring transition',
+            helpActive
+              ? 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 shadow-sm'
+              : open || active
               ? 'bg-navy-50 text-navy-700'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
           )}
         >
           <span className="relative shrink-0">
             <LifeBuoy className="h-5 w-5" />
-            {supportAlerts.length > 0 && (
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-600" />
+            {helpActive && (
+              <span className="absolute -right-2.5 -top-2.5 flex h-5 min-w-5 animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                {unreadHelp > 9 ? '9+' : unreadHelp}
+              </span>
             )}
           </span>
           <span className="hidden text-[13px] font-semibold sm:inline">Help</span>
@@ -76,6 +109,7 @@ export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean 
             icon={<LifeBuoy className="h-4 w-4" />}
             title="Support"
             body="Rendi's help desk. Raise a request and track the reply."
+            unread={supportAlerts.length}
             onNavigate={() => void openSupport(close)}
           />
 
@@ -88,7 +122,8 @@ export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean 
               icon={<Headset className="h-4 w-4" />}
               title="Account officer"
               body="Your named contact, who knows this community."
-              onNavigate={close}
+              unread={officerAlerts}
+              onNavigate={() => void openAccountOfficer(close)}
             />
           )}
         </div>
@@ -102,23 +137,37 @@ function MenuLink({
   icon,
   title,
   body,
+  unread = 0,
   onNavigate,
 }: {
   href: string;
   icon: React.ReactNode;
   title: string;
   body: string;
+  unread?: number;
   onNavigate: () => void;
 }) {
   return (
     <Link
       href={href as never}
       onClick={onNavigate}
-      className="flex gap-2.5 px-3 py-2.5 transition-colors hover:bg-slate-50"
+      className={cn(
+        'mx-1.5 flex gap-2.5 rounded-lg px-3 py-2.5 transition-colors',
+        unread ? 'bg-red-50 ring-1 ring-inset ring-red-100 hover:bg-red-100' : 'hover:bg-slate-50',
+      )}
     >
-      <span className="mt-0.5 shrink-0 text-slate-500">{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-semibold text-navy-900">{title}</span>
+      <span className={cn('relative mt-0.5 shrink-0', unread ? 'text-red-600' : 'text-slate-500')}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2 text-[13px] font-semibold text-navy-900">
+          {title}
+          {unread > 0 && (
+            <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
+              {unread > 99 ? '99+' : unread} new
+            </span>
+          )}
+        </span>
         <span className="block text-[11px] leading-4 text-slate-500">{body}</span>
       </span>
     </Link>

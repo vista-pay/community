@@ -28,6 +28,7 @@ import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
 import { portalApi } from '@/services/portal';
 import { date, humanise, relative } from '@/lib/format';
+import { openBlob } from '@/lib/api';
 import type { JoinRequest, JoinReviewStage } from '@/types';
 
 /** Stable empty result: `?? []` inline defeats the memos below. */
@@ -391,6 +392,18 @@ function RequestDetail({
           <dd className="font-medium text-navy-900">{date(request.appliedAt, 'long')}</dd>
         </div>
       </dl>
+
+      <Button
+        variant="secondary"
+        onClick={() =>
+          void portalApi
+            .membershipAgreementPdf(communityId, request.membershipId)
+            .then((file) => openBlob(file.blob, file.filename, true))
+            .catch((error: Error) => toast('Could not open agreement', 'error', error.message))
+        }
+      >
+        View signed membership agreement
+      </Button>
 
       {!request.identityVerified && (
         <Callout tone="warning" title="Identity not verified by Rendi">
