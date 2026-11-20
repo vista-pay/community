@@ -49,6 +49,10 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
     unreadNotifications: 0,
   };
   const activitySeries = d.activitySeries ?? [];
+  const activityTotal = activitySeries.reduce(
+    (total, day) => total + day.members + day.finance + day.governance + day.other,
+    0,
+  );
   const attentionCount =
     d.navigationCounts?.dashboard ??
     (d.actions.pendingApplications +
@@ -141,19 +145,32 @@ export function DashboardClient({ initial }: { initial: DashboardData }) {
             subtitle={`${metrics.activityLast7Days} recorded action${metrics.activityLast7Days === 1 ? '' : 's'} in the last 7 days`}
           />
           <div className="px-3 pb-4 pt-2 sm:px-5">
-            <Bars
-              data={activitySeries}
-              x="label"
-              height={270}
-              currency={false}
-              stacked
-              series={[
-                { key: 'members', name: 'Members', color: C.green },
-                { key: 'finance', name: 'Finance', color: C.navy },
-                { key: 'governance', name: 'Governance', color: C.gold },
-                { key: 'other', name: 'Other', color: C.slate },
-              ]}
-            />
+            {activityTotal > 0 ? (
+              <div className="h-[270px] min-w-0 w-full">
+                <Bars
+                  data={activitySeries}
+                  x="label"
+                  height={270}
+                  currency={false}
+                  stacked
+                  series={[
+                    { key: 'members', name: 'Members', color: C.green },
+                    { key: 'finance', name: 'Finance', color: C.navy },
+                    { key: 'governance', name: 'Governance', color: C.gold },
+                    { key: 'other', name: 'Other', color: C.slate },
+                  ]}
+                />
+              </div>
+            ) : (
+              <div className="flex h-[270px] items-center justify-center">
+                <EmptyState
+                  compact
+                  icon={<Activity className="h-5 w-5" />}
+                  title="No activity yet"
+                  body="Member, finance and governance actions from the last seven days will appear here."
+                />
+              </div>
+            )}
           </div>
         </Card>
 

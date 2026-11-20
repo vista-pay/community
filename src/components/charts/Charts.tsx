@@ -24,7 +24,7 @@ type Series = { key: string; name: string; color: string; dashed?: boolean };
 
 export function AreaTrend<T extends object>({ data, x, series, height = 240, currency = true }: { data: T[]; x: keyof T & string; series: Series[]; height?: number; currency?: boolean }) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={40}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           {series.map((s) => (
@@ -47,7 +47,7 @@ export function AreaTrend<T extends object>({ data, x, series, height = 240, cur
 
 export function Bars<T extends object>({ data, x, series, height = 240, stacked, currency = true }: { data: T[]; x: keyof T & string; series: Series[]; height?: number; stacked?: boolean; currency?: boolean }) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={40}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
         <CartesianGrid stroke="#EEF2F7" vertical={false} />
         <XAxis dataKey={x} tick={axis} axisLine={false} tickLine={false} />
@@ -62,7 +62,7 @@ export function Bars<T extends object>({ data, x, series, height = 240, stacked,
 
 export function Lines<T extends object>({ data, x, series, height = 240, currency = false }: { data: T[]; x: keyof T & string; series: Series[]; height?: number; currency?: boolean }) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={height} minWidth={0} debounce={40}>
       <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="#EEF2F7" vertical={false} />
         <XAxis dataKey={x} tick={axis} axisLine={false} tickLine={false} />
@@ -77,7 +77,7 @@ export function Lines<T extends object>({ data, x, series, height = 240, currenc
 export function Donut({ data, height = 180, center }: { data: { name: string; value: number; color: string }[]; height?: number; center?: { label: string; value: string } }) {
   return (
     <div className="relative" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={40}>
         <PieChart>
           <Pie data={data} dataKey="value" nameKey="name" innerRadius="68%" outerRadius="95%" paddingAngle={2} stroke="none" startAngle={90} endAngle={-270}>
             {data.map((d) => <Cell key={d.name} fill={d.color} />)}
