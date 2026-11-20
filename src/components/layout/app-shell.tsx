@@ -65,7 +65,7 @@ import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
 import { portalApi } from '@/services/portal';
-import type { CommunitySummary, DashboardData, EntitlementsSummary } from '@/types';
+import type { BranchAccess, CommunitySummary, DashboardData, EntitlementsSummary } from '@/types';
 import { Logo, LogoMark } from './Logo';
 import { NotificationsMenu } from './notifications-menu';
 import { RendiAiPanel } from '@/components/rendi-ai/rendi-ai-panel';
@@ -281,6 +281,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     [community?.id],
     { enabled: Boolean(community) },
   );
+  /**
+   * What this person may actually do here.
+   *
+   * A branch manager's community role is plain membership — all their
+   * authority sits on their seats — so the shell cannot work out what to show
+   * them from the role alone. Probed like entitlements rather than flagged,
+   * and failing to a plain member's view if the call does not come back.
+   */
+  const { data: access } = useQuery<BranchAccess | null>(
+    () => (community ? portalApi.branchAccess(community.id) : Promise.resolve(null)),
+    [community?.id],
+    { enabled: Boolean(community) },
+  );
+
   const features = entitlements?.features ?? [];
   const planGates: Record<string, boolean> = {
     '/account-officer': features.includes('dedicated_support'),
@@ -422,6 +436,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           collapsed={collapsed}
           counts={navigationCounts ?? undefined}
           planGates={planGates}
+          access={access ?? null}
         />
         <button
           onClick={toggleSidebar}
@@ -444,6 +459,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               collapsed={false}
               counts={navigationCounts ?? undefined}
               planGates={planGates}
+              access={access ?? null}
               onNavigate={() => setMobileOpen(false)}
             />
             <button
@@ -515,12 +531,15 @@ function Sidebar({
   collapsed,
   counts,
   planGates,
+  access,
   onNavigate,
 }: {
   collapsed: boolean;
   counts?: NavigationCounts;
   /** href → whether the plan grants it; hrefs not listed are always shown. */
   planGates?: Record<string, boolean>;
+  /** What the viewer may do — see the branch workspace card below. */
+  access?: BranchAccess | null;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -548,16 +567,54 @@ function Sidebar({
       </div>
 
       {community && !collapsed && (
-        <div className="mx-3 mt-4 flex items-center gap-3 rounded-xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-700 text-navy-100">
-            <Building2 className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium text-white">{community.name}</p>
-            <p className="text-[11px] text-navy-300">
-              {community.status === 'VERIFIED' ? 'Verified workspace' : 'Verification pending'}
-            </p>
+        <div className="mx-3 mt-4 rounded-xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-700 text-navy-100">
+              <Building2 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium text-white">{community.name}</p>
+              <p className="text-[11px] text-navy-300">
+                {community.status === 'VERIFIED' ? 'Verified workspace' : 'Verification pending'}
+              </p>
+            </div>
           </div>
+
+          {/*
+            A branch officer signs in with the same account as everybody else —
+            one person, one login, which is the platform's rule and not worth
+            breaking for a second password to forget. What changes is where
+            they land: the seats they hold are named here, so signing in puts
+            them in their branch rather than in front of a cooperative they
+            cannot act on.
+          */}
+          {access?.seats.length ? (
+            <div className="mt-2.5 space-y-1 border-t border-white/5 pt-2.5">
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-navy-400">
+                {access.isBranchOnly ? 'Your branch' : 'You also run'}
+              </p>
+              {access.seats.map((seat) => (
+                <Link
+                  key={seat.id}
+                  href={`/branches/${seat.branch.id}`}
+                  onClick={onNavigate}
+                  className="focus-ring flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-white/[0.06]"
+                >
+                  <Network className="h-3.5 w-3.5 shrink-0 text-brand-400" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] text-white">{seat.branch.name}</span>
+                    <span className="block truncate text-[11px] text-navy-300">{seat.title}</span>
+                  </span>
+                </Link>
+              ))}
+              {access.powersPausedAt && (
+                <p className="rounded-lg bg-red-500/10 px-1.5 py-1 text-[11px] leading-relaxed text-red-300">
+                  Your officer powers are paused, so branch actions will be refused. Your own
+                  records are unaffected.
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
 

@@ -16,6 +16,7 @@ import { useRef, useState } from 'react';
 import { LifeBuoy, Paperclip, Plus, Send, X } from 'lucide-react';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
+import { useRealtimeEvent } from '@/hooks/use-realtime';
 import { portalApi } from '@/services/portal';
 import {
   Badge,
@@ -81,6 +82,7 @@ export function SupportClient() {
     data: ticket,
     loading: ticketLoading,
     setData: setTicket,
+    refresh: refreshTicket,
   } = useQuery<SupportTicketDetail | null>(
     () => (openRef ? portalApi.supportTicket(openRef) : Promise.resolve(null)),
     [openRef],
@@ -91,6 +93,15 @@ export function SupportClient() {
   // it as the list itself is what crashed this page with "U.map is not a
   // function".
   const rows = tickets?.tickets ?? [];
+
+  useRealtimeEvent(
+    'support.updated',
+    () => {
+      void refreshList();
+      if (openRef) void refreshTicket();
+    },
+    Boolean(communityId),
+  );
 
   return (
     <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden lg:h-[calc(100dvh-8rem)]">
@@ -156,7 +167,9 @@ export function SupportClient() {
                   <span className="mt-1 flex items-center gap-1.5">
                     <Badge tone={STATUS_TONE[row.status]}>{STATUS_LABEL[row.status]}</Badge>
                     <span className="truncate text-[11px] text-slate-500">
-                      {row.categoryLabel ?? row.category}
+                      {row.subcategory
+                        ? `${row.categoryLabel ?? row.category} · ${row.subcategory}`
+                        : (row.categoryLabel ?? row.category)}
                     </span>
                   </span>
                 </button>
@@ -239,6 +252,11 @@ function TicketThread({
   const [pending, setPending] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
+  const openingMessage = ticket.messages[0]?.authorType === 'CUSTOMER' &&
+    ticket.messages[0].body.trim() === ticket.description.trim()
+      ? ticket.messages[0]
+      : null;
+  const conversation = openingMessage ? ticket.messages.slice(1) : ticket.messages;
 
   async function attach(files: FileList | null) {
     if (!files?.length) return;
@@ -288,16 +306,45 @@ function TicketThread({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-navy-900">{ticket.subject}</p>
           <p className="truncate text-[11px] text-slate-500">
-            {ticket.reference} · {ticket.categoryLabel ?? ticket.category} · raised{' '}
-            {date(ticket.createdAt)}
+            {ticket.reference} · {ticket.categoryLabel ?? ticket.category}
+            {ticket.subcategory && <> · {ticket.subcategory}</>} · raised {date(ticket.createdAt)}
             {ticket.assignedAgentName && <> · with {ticket.assignedAgentName}</>}
           </p>
         </div>
         <Badge tone={STATUS_TONE[ticket.status]}>{STATUS_LABEL[ticket.status]}</Badge>
       </header>
 
+      <section className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Detail label="Subject" value={ticket.subject} />
+          <Detail
+            label="Category"
+            value={`${ticket.categoryLabel ?? ticket.category}${ticket.subcategory ? ` · ${ticket.subcategory}` : ''}`}
+          />
+          <Detail label="Urgency" value={ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()} />
+          <Detail label="Reference" value={ticket.reference} />
+          <Detail label="Raised" value={date(ticket.createdAt)} />
+          {ticket.transactionReference && (
+            <Detail label="Transaction reference" value={ticket.transactionReference} />
+          )}
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">What happened</p>
+          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-navy-900">{ticket.description}</p>
+          {openingMessage?.attachments?.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {openingMessage.attachments.map((file) => (
+                <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-700 underline">
+                  {file.fileName}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <ChatThread
-        messages={ticket.messages.map((message) => ({
+        messages={conversation.map((message) => ({
           id: message.id,
           text: message.body,
           at: message.createdAt,
@@ -392,6 +439,15 @@ function TicketThread({
   );
 }
 
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 text-[13px] font-medium text-navy-900">{value}</p>
+    </div>
+  );
+}
+
 /** Raising one. The category list comes from the API so it cannot drift. */
 function NewRequest({
   communityId,
@@ -408,13 +464,20 @@ function NewRequest({
   );
 
   const [category, setCategory] = useState('');
+  /** Only asked for, and only sent, when the subject chosen is "Other". */
+  const [otherTopic, setOtherTopic] = useState('');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<'NORMAL' | 'HIGH' | 'URGENT'>('NORMAL');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const ready = category && subject.trim().length > 2 && description.trim().length > 9;
+  const isOther = category === 'OTHER';
+  const ready =
+    category &&
+    (!isOther || otherTopic.trim().length > 2) &&
+    subject.trim().length > 2 &&
+    description.trim().length > 9;
 
   async function submit() {
     if (!ready || !communityId) return;
@@ -424,6 +487,10 @@ function NewRequest({
       onRaised(
         await portalApi.raiseSupportTicket(communityId, {
           category,
+          // "Other" on its own tells the desk nothing, so what the officer
+          // typed rides along as the subcategory and shows beside the
+          // category everywhere the ticket is read.
+          ...(isOther ? { subcategory: otherTopic.trim() } : {}),
           subject: subject.trim(),
           description: description.trim(),
           priority,
@@ -457,7 +524,15 @@ function NewRequest({
         {error && <Callout tone="danger">{error}</Callout>}
 
         <Field label="What is it about" required>
-          <Select value={category} onChange={(event) => setCategory(event.target.value)}>
+          <Select
+            value={category}
+            onChange={(event) => {
+              setCategory(event.target.value);
+              // Cleared on the way out of "Other" so a topic typed and then
+              // abandoned cannot be sent under a subject it does not match.
+              if (event.target.value !== 'OTHER') setOtherTopic('');
+            }}
+          >
             <option value="">Choose a subject…</option>
             {(categories ?? []).map((option) => (
               <option key={option.code} value={option.code}>
@@ -466,6 +541,23 @@ function NewRequest({
             ))}
           </Select>
         </Field>
+
+        {isOther && (
+          <Field
+            label="Tell us what it is about"
+            required
+            hint="A few words — it is what the desk sees beside the request"
+          >
+            <Input
+              value={otherTopic}
+              onChange={(event) => setOtherTopic(event.target.value)}
+              placeholder="Bank statement request"
+              // Matches the 80-character limit the API holds this field to.
+              maxLength={80}
+              autoFocus
+            />
+          </Field>
+        )}
 
         <Field label="Summary" required hint="One line the desk can triage from">
           <Input

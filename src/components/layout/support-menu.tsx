@@ -19,10 +19,24 @@ import { usePathname } from 'next/navigation';
 import { Headset, LifeBuoy } from 'lucide-react';
 import { Popover } from '@/components/ui';
 import { cn } from '@/lib/format';
+import { useQuery } from '@/hooks/use-query';
+import { useRealtimeEvent } from '@/hooks/use-realtime';
+import { portalApi } from '@/services/portal';
+import type { NotificationItem } from '@/types';
 
 export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean }) {
   const pathname = usePathname();
   const active = pathname.startsWith('/support') || pathname.startsWith('/account-officer');
+  const { data, refresh } = useQuery<NotificationItem[]>(() => portalApi.notifications(), []);
+  const supportAlerts = (data ?? []).filter((item) => item.type === 'SUPPORT' && !item.isRead);
+
+  useRealtimeEvent('support.updated', () => void refresh());
+
+  async function openSupport(close: () => void) {
+    close();
+    await Promise.all(supportAlerts.map((item) => portalApi.markNotificationRead(item.id)));
+    if (supportAlerts.length) await refresh();
+  }
 
   return (
     <Popover
@@ -41,7 +55,12 @@ export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean 
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
           )}
         >
-          <LifeBuoy className="h-5 w-5 shrink-0" />
+          <span className="relative shrink-0">
+            <LifeBuoy className="h-5 w-5" />
+            {supportAlerts.length > 0 && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-600" />
+            )}
+          </span>
           <span className="hidden text-[13px] font-semibold sm:inline">Help</span>
         </button>
       )}
@@ -57,7 +76,7 @@ export function SupportMenu({ hasAccountOfficer }: { hasAccountOfficer: boolean 
             icon={<LifeBuoy className="h-4 w-4" />}
             title="Support"
             body="Rendi's help desk. Raise a request and track the reply."
-            onNavigate={close}
+            onNavigate={() => void openSupport(close)}
           />
 
           {/* Shown only when the plan carries it. A disabled row would be an

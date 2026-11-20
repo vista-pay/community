@@ -562,6 +562,33 @@ export interface BranchPerformance {
   isConsolidated?: boolean;
 }
 
+/**
+ * What the signed-in officer may do in this community.
+ *
+ * A branch manager's community role is plain membership — their authority
+ * lives entirely on their seats — so "are you an officer?" is the wrong
+ * question for the shell to ask.
+ */
+export interface BranchAccess {
+  membershipId: string;
+  /** True when they can act anywhere, branches aside. */
+  communityWide: boolean;
+  role: { name: string; label: string };
+  /** Set when a platform admin has paused their officer powers. */
+  powersPausedAt: IsoDate | null;
+  seats: Array<{
+    id: string;
+    post: BranchPost;
+    title: string;
+    appointedAt: IsoDate;
+    branch: { id: string; name: string; code: string | null; isActive: boolean };
+    role: { id: string; label: string };
+    permissions: Array<{ resource: string; action: string }>;
+  }>;
+  /** They run something and hold nothing community-wide. */
+  isBranchOnly: boolean;
+}
+
 export interface BranchLoanRow {
   id: string;
   reference: string;

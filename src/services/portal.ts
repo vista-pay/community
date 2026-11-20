@@ -16,6 +16,7 @@ import type {
   AccountOfficerCard,
   AccountOfficerMessage,
   AccountingPeriod,
+  BranchAccess,
   BranchDetail,
   BranchesOverview,
   BranchLoanRow,
@@ -889,6 +890,23 @@ export const portalApi = {
    */
   branchPerformance: (communityId: string, window: { from?: string; to?: string } = {}) =>
     get<BranchPerformance>(path(communityId, '/branch-performance'), window),
+  /** What the signed-in officer may do here — community-wide, or in which branches. */
+  branchAccess: (communityId: string) =>
+    get<BranchAccess>(path(communityId, '/branch-access')),
+  /**
+   * Invite somebody straight into a branch. The invitation carries the
+   * destination, so taking it up lands them in the community and the branch
+   * with the seat it named — there is no second step to forget.
+   */
+  inviteToBranch: (
+    communityId: string,
+    branchId: string,
+    body: { invitees: string[]; post?: BranchPost; roleId?: string; title?: string },
+  ) =>
+    post<{ invited: number; outcomes: Array<{ email: string; status: string; reason?: string }>; branch: { id: string; name: string } }>(
+      path(communityId, `/branches/${branchId}/invitations`),
+      body,
+    ),
   branchLoans: (communityId: string, branchId: string) =>
     get<BranchLoanRow[]>(path(communityId, `/branches/${branchId}/loans`)),
   /** Advice, not a decision — the committee still approves. */
@@ -990,6 +1008,8 @@ export const portalApi = {
     communityId: string,
     body: {
       category: string;
+      /** What the officer typed when the category chosen was "Other". */
+      subcategory?: string;
       subject: string;
       description: string;
       priority?: 'NORMAL' | 'HIGH' | 'URGENT';

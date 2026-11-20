@@ -30,6 +30,7 @@ import {
   Plus,
   ShieldCheck,
   UserMinus,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { useSession } from '@/components/providers/session-provider';
@@ -408,6 +409,7 @@ function BranchRoster({ communityId, branch }: { communityId: string; branch: Br
     [communityId, branch.id],
   );
   const [assigning, setAssigning] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -436,9 +438,14 @@ function BranchRoster({ communityId, branch }: { communityId: string; branch: Br
         subtitle="Who belongs to this chapter"
         action={
           branch.canManage && (
-            <Button size="sm" variant="secondary" onClick={() => { setError(''); setAssigning(true); }}>
-              Assign members
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="blue" onClick={() => { setError(''); setInviting(true); }}>
+                <UserPlus className="h-3.5 w-3.5" aria-hidden /> Invite
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => { setError(''); setAssigning(true); }}>
+                Assign existing
+              </Button>
+            </div>
           )
         }
       />
@@ -481,7 +488,193 @@ function BranchRoster({ communityId, branch }: { communityId: string; branch: Br
           onSave={(ids) => void save(ids, true)}
         />
       )}
+
+      {inviting && (
+        <InviteToBranchModal
+          communityId={communityId}
+          branch={branch}
+          onClose={() => setInviting(false)}
+          onDone={() => { setInviting(false); void refresh(); }}
+        />
+      )}
     </Card>
+  );
+}
+
+/**
+ * Invite somebody who is not in the community yet, straight into this branch.
+ *
+ * The invitation carries the destination, so whichever way it is taken up —
+ * accepted in the app, or redeemed simply by registering with that email or
+ * phone — the person arrives already in this branch, holding the seat it
+ * named. Before this, a branch could only build its roster out of people the
+ * head office had already invited and already placed: three steps across two
+ * screens for one intention.
+ */
+function InviteToBranchModal({
+  communityId,
+  branch,
+  onClose,
+  onDone,
+}: {
+  communityId: string;
+  branch: BranchDetail;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [raw, setRaw] = useState('');
+  const [asOfficer, setAsOfficer] = useState(false);
+  const [post, setPost] = useState<BranchPost>('STAFF');
+  const roles = branch.assignableRoles ?? [];
+  const branchPosts = roles.filter((role) => role.isBranchRole);
+  const [roleId, setRoleId] = useState(
+    branchPosts.find((role) => role.name === 'BRANCH_SECRETARY')?.id ?? branchPosts[0]?.id ?? '',
+  );
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [outcomes, setOutcomes] = useState<Array<{ email: string; status: string; reason?: string }> | null>(null);
+
+  // Split on commas, spaces and newlines so a pasted column from a
+  // spreadsheet works as well as one address typed in.
+  const invitees = raw
+    .split(/[\s,;]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  async function send() {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await portalApi.inviteToBranch(communityId, branch.id, {
+        invitees,
+        ...(asOfficer ? { post, roleId, ...(title.trim() ? { title: title.trim() } : {}) } : {}),
+      });
+      setOutcomes(result.outcomes);
+      if (result.invited > 0) toast(`${result.invited} invited to ${branch.name}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Those invitations did not send.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Invite to ${branch.name}`}
+      description="They can be new to Rendi entirely. Whenever they take the invitation up, they land in this branch — you do not have to place them afterwards."
+      footer={
+        outcomes ? (
+          <Button variant="blue" onClick={onDone}>Done</Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button
+              variant="blue"
+              loading={busy}
+              disabled={invitees.length === 0 || (asOfficer && !roleId)}
+              onClick={() => void send()}
+            >
+              Invite {invitees.length || ''}
+            </Button>
+          </>
+        )
+      }
+    >
+      {outcomes ? (
+        <ul className="space-y-1.5">
+          {outcomes.map((outcome) => (
+            <li key={outcome.email} className="flex flex-wrap items-center gap-2 text-[13px]">
+              <span className="min-w-0 flex-1 truncate text-navy-900">{outcome.email}</span>
+              <Badge
+                tone={
+                  outcome.status === 'INVITED'
+                    ? 'green'
+                    : outcome.status === 'ALREADY_MEMBER'
+                      ? 'slate'
+                      : 'amber'
+                }
+              >
+                {outcome.status.toLowerCase().replaceAll('_', ' ')}
+              </Badge>
+              {outcome.reason && <span className="w-full text-[11px] text-slate-500">{outcome.reason}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="space-y-4">
+          {error && <Callout tone="danger">{error}</Callout>}
+          <Field
+            label="Email addresses or phone numbers"
+            htmlFor="inv-list"
+            required
+            hint="One per line, or separated by commas. A phone number is recorded but not messaged — there is no SMS sender wired up yet, so tell them yourself."
+          >
+            <Textarea
+              id="inv-list"
+              autoFocus
+              value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              placeholder={'ada@example.com\n08012345678'}
+            />
+          </Field>
+
+          <Checkbox
+            checked={asOfficer}
+            onChange={setAsOfficer}
+            label="They are joining the branch leadership"
+            description="Give them a seat as well as a place. Leave this off to invite an ordinary member of this branch."
+          />
+
+          {asOfficer && (
+            <div className="space-y-4 rounded-xl border border-slate-200 p-3.5">
+              <Field label="Post" htmlFor="inv-post" required>
+                <Select
+                  id="inv-post"
+                  value={post}
+                  onChange={(e) => setPost(e.target.value as BranchPost)}
+                >
+                  <option value="STAFF">Branch staff</option>
+                  <option value="MANAGER">Branch manager — replaces whoever runs it now</option>
+                </Select>
+              </Field>
+              <Field
+                label="Role that bounds the seat"
+                htmlFor="inv-role"
+                required
+                hint={`Their authority applies inside ${branch.name} and nowhere else.`}
+              >
+                <Select id="inv-role" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+                  <option value="">Choose a role…</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.label}
+                      {role.isBranchRole ? '' : ' (community-wide post, bounded here)'}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Title at this branch" htmlFor="inv-title" optional>
+                <Input
+                  id="inv-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Branch Secretary"
+                />
+              </Field>
+              <p className="text-[13px] leading-relaxed text-slate-500">
+                A seat invitation is taken up by signing in — somebody recruited to run a branch has
+                already accepted the job, so they are not asked a second time. An invitation without
+                a seat still asks before joining them to anything.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
