@@ -146,6 +146,14 @@ const path = (communityId: string, suffix = '') => `/communities/${communityId}$
  * the API tests each with `!== undefined`, so an empty string clears a field
  * and an absent key leaves it alone.
  */
+/** Where an invitation lands somebody. Every field optional and omitted when unset. */
+export type InvitePlacement = Partial<{
+  branchId: string;
+  branchPost: BranchPost;
+  branchRoleId: string;
+  branchTitle: string;
+}>;
+
 type BranchSettingsBody = Partial<{
   name: string;
   code: string;
@@ -380,6 +388,11 @@ export const portalApi = {
   ajoAgreementPdf: (groupId: string, membershipId: string) =>
     getBlob(
       `/ajo-groups/${groupId}/agreements/${membershipId}/pdf`,
+      'membership-agreement.pdf',
+    ),
+  membershipAgreementPdf: (communityId: string, membershipId: string) =>
+    getBlob(
+      `/communities/${communityId}/agreements/${membershipId}/pdf`,
       'membership-agreement.pdf',
     ),
 
@@ -1426,13 +1439,26 @@ export const portalApi = {
    * One payload for a single invite, a pasted list and a CSV alike — the API
    * de-duplicates and reports per address, so the client never has to fan out.
    */
-  inviteCommunityMembers: (communityId: string, emails: string[]) =>
-    post<InviteResult>(path(communityId, '/members/invite'), { identifiers: emails }),
+  /**
+   * `placement` lands the invitees in a branch — and optionally a seat on it —
+   * at the moment they take the invitation up, rather than leaving an officer
+   * to place them afterwards.
+   */
+  inviteCommunityMembers: (
+    communityId: string,
+    emails: string[],
+    placement: InvitePlacement = {},
+  ) =>
+    post<InviteResult>(path(communityId, '/members/invite'), {
+      identifiers: emails,
+      ...placement,
+    }),
 
   inviteExistingCommunityMembers: (
     communityId: string,
     existingMembers: ExistingMemberInvite[],
-  ) => post<InviteResult>(path(communityId, '/members/invite'), { existingMembers }),
+    placement: InvitePlacement = {},
+  ) => post<InviteResult>(path(communityId, '/members/invite'), { existingMembers, ...placement }),
 
   /** Invitations an officer has sent that nobody has answered yet. */
   pendingInvitations: (communityId: string) =>

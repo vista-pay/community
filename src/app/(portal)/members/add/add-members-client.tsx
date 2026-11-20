@@ -20,17 +20,26 @@ import {
   Callout,
   Card,
   CardHeader,
+  Checkbox,
   Field,
   Input,
   PageHeader,
   Segmented,
+  Select,
   Textarea,
 } from '@/components/ui';
-import { useMutation } from '@/hooks/use-query';
+import { useMutation, useQuery } from '@/hooks/use-query';
 import { useCommunityId } from '@/components/providers/session-provider';
 import { useToast } from '@/components/providers/toast-provider';
-import { portalApi } from '@/services/portal';
-import type { ExistingMemberInvite, InviteOutcome, InviteResult } from '@/types';
+import { portalApi, type InvitePlacement } from '@/services/portal';
+import type {
+  BranchesOverview,
+  BranchPost,
+  CommunityRole,
+  ExistingMemberInvite,
+  InviteOutcome,
+  InviteResult,
+} from '@/types';
 
 type Mode = 'single' | 'list' | 'csv';
 type MemberKind = 'new' | 'existing';
@@ -107,6 +116,15 @@ const OUTCOME_COPY: Record<
   },
 };
 
+/** What to tell the officer about where the people they just invited will land. */
+function placementNote(branchName: string | undefined, withSeat: boolean): string {
+  if (!branchName) return 'They will be asked to accept before joining.';
+  if (withSeat) {
+    return `They join ${branchName} with their seat as soon as they sign in — a seat invitation is taken up by taking up the account.`;
+  }
+  return `They will be asked to accept, and land in ${branchName} when they do.`;
+}
+
 export function AddMembersClient() {
   const communityId = useCommunityId();
   const { toast } = useToast();
@@ -128,6 +146,48 @@ export function AddMembersClient() {
   const [existingFileName, setExistingFileName] = useState<string | null>(null);
   const [existingFileError, setExistingFileError] = useState<string | null>(null);
 
+  /**
+   * Where these invitations land.
+   *
+   * Asked here rather than left for afterwards: an officer importing a
+   * register knows which chapter each batch belongs to, and placing people
+   * later leaves a window where everybody is a member of nowhere. The whole
+   * block is hidden for a community with no branches, so nothing changes for
+   * one that does not use them.
+   */
+  const { data: branchOverview } = useQuery<BranchesOverview | null>(
+    () => (communityId ? portalApi.branches(communityId) : Promise.resolve(null)),
+    [communityId],
+    { enabled: Boolean(communityId) },
+  );
+  const { data: roles } = useQuery<CommunityRole[] | null>(
+    () => (communityId ? portalApi.roles(communityId) : Promise.resolve(null)),
+    [communityId],
+    { enabled: Boolean(communityId) },
+  );
+  const openBranches = (branchOverview?.branches ?? []).filter((branch) => branch.isActive);
+  const branchRoles = (roles ?? []).filter((role) => role.isBranchRole);
+  const [branchId, setBranchId] = useState('');
+  const [asOfficer, setAsOfficer] = useState(false);
+  const [branchPost, setBranchPost] = useState<BranchPost>('STAFF');
+  const [branchRoleId, setBranchRoleId] = useState('');
+  const [branchTitle, setBranchTitle] = useState('');
+
+  // Built fresh on each render and read through the mutation's action ref, so
+  // it is always the placement currently on screen.
+  const placement: InvitePlacement = branchId
+    ? {
+        branchId,
+        ...(asOfficer && branchRoleId
+          ? {
+              branchPost,
+              branchRoleId,
+              ...(branchTitle.trim() ? { branchTitle: branchTitle.trim() } : {}),
+            }
+          : {}),
+      }
+    : {};
+
   const raw = mode === 'single' ? single : bulk;
   const emails = useMemo(() => parseEmails(raw), [raw]);
 
@@ -135,7 +195,7 @@ export function AddMembersClient() {
   const singleInvalid = mode === 'single' && single.trim().length > 0 && emails.length === 0;
   const tooMany = emails.length > MAX_BULK;
 
-  const invite = useMutation((list: string[]) => portalApi.inviteCommunityMembers(communityId, list), {
+  const invite = useMutation((list: string[]) => portalApi.inviteCommunityMembers(communityId, list, placement), {
     onSuccess: (res) => {
       setResult(res);
       setSingle('');
@@ -146,14 +206,15 @@ export function AddMembersClient() {
         res.invited === 0 ? 'info' : 'success',
         res.invited === 0
           ? 'Everyone on that list was already a member or already invited.'
-          : 'They will be asked to accept before joining.',
+          : placementNote(openBranches.find((b) => b.id === branchId)?.name, asOfficer && Boolean(branchRoleId)),
       );
     },
     onError: (message) => toast('Could not send invitations', 'error', message),
   });
 
   const inviteExisting = useMutation(
-    (members: ExistingMemberInvite[]) => portalApi.inviteExistingCommunityMembers(communityId, members),
+    (members: ExistingMemberInvite[]) =>
+      portalApi.inviteExistingCommunityMembers(communityId, members, placement),
     {
       onSuccess: (res) => {
         setResult(res);
@@ -165,7 +226,9 @@ export function AddMembersClient() {
           res.invited === 0 ? 'info' : 'success',
           res.invited === 0
             ? 'Check the result below for duplicate members or member codes.'
-            : 'Their historical membership details will be applied when they accept.',
+            : `Their historical membership details will be applied when they accept.${
+                branchId ? ` ${placementNote(openBranches.find((b) => b.id === branchId)?.name, false)}` : ''
+              }`,
         );
       },
       onError: (message) => toast('Could not import members', 'error', message),
@@ -242,6 +305,15 @@ export function AddMembersClient() {
         the moment they accept — no officer review afterwards, because you invited them. If there
         is no account yet, they are emailed a link to download the app and are prompted to join
         once they have registered.
+        {branchId && (
+          <>
+            {' '}
+            Either way they land in{' '}
+            <b>{openBranches.find((branch) => branch.id === branchId)?.name}</b>
+            {asOfficer && branchRoleId ? ', holding the seat you chose' : ''} — there is no second
+            step to remember.
+          </>
+        )}
       </Callout>
 
       <Card className="p-4">
@@ -263,6 +335,100 @@ export function AddMembersClient() {
             : 'Bring a member from your existing register into Rendi without losing their original details.'}
         </p>
       </Card>
+
+      {openBranches.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Which branch?"
+            subtitle="They land there when they take the invitation up — you do not have to place them afterwards"
+          />
+          <div className="space-y-4 px-5 pb-5">
+            <Field
+              label="Branch"
+              htmlFor="inv-branch"
+              optional
+              hint="Leave unset to admit them to the community and place them later."
+            >
+              <Select
+                id="inv-branch"
+                value={branchId}
+                onChange={(e) => {
+                  setBranchId(e.target.value);
+                  if (!e.target.value) setAsOfficer(false);
+                }}
+              >
+                <option value="">No branch — place them later</option>
+                {openBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {[branch.name, branch.code, [branch.city, branch.state].filter(Boolean).join(', ')]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            {branchId && (
+              <Checkbox
+                checked={asOfficer}
+                onChange={setAsOfficer}
+                label="They are joining the branch leadership"
+                description="Give them a seat as well as a place. Leave this off for an ordinary member of the branch."
+              />
+            )}
+
+            {branchId && asOfficer && (
+              <div className="grid gap-4 rounded-xl border border-slate-200 p-3.5 sm:grid-cols-2">
+                <Field label="Post" htmlFor="inv-post" required>
+                  <Select
+                    id="inv-post"
+                    value={branchPost}
+                    onChange={(e) => setBranchPost(e.target.value as BranchPost)}
+                  >
+                    <option value="STAFF">Branch staff</option>
+                    <option value="MANAGER">Branch manager — replaces whoever runs it now</option>
+                  </Select>
+                </Field>
+                <Field
+                  label="Role that bounds the seat"
+                  htmlFor="inv-role"
+                  required
+                  hint="Their authority applies inside that branch and nowhere else."
+                >
+                  <Select
+                    id="inv-role"
+                    value={branchRoleId}
+                    onChange={(e) => setBranchRoleId(e.target.value)}
+                  >
+                    <option value="">Choose a role…</option>
+                    {[...branchRoles, ...(roles ?? []).filter((role) => !role.isBranchRole && !role.isProtected)].map(
+                      (role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.label}
+                          {role.isBranchRole ? '' : ' (community-wide post, bounded there)'}
+                        </option>
+                      ),
+                    )}
+                  </Select>
+                </Field>
+                <Field label="Title at the branch" htmlFor="inv-title" optional className="sm:col-span-2">
+                  <Input
+                    id="inv-title"
+                    value={branchTitle}
+                    onChange={(e) => setBranchTitle(e.target.value)}
+                    placeholder="Branch Secretary"
+                  />
+                </Field>
+                <p className="text-[13px] leading-relaxed text-slate-500 sm:col-span-2">
+                  A seat invitation is taken up by signing in — somebody recruited to run a branch
+                  has already accepted the job. An invitation without a seat still asks before
+                  joining them to anything.
+                </p>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardHeader

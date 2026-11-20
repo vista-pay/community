@@ -124,6 +124,11 @@ export interface CommunityRole {
   isSystem: boolean;
   /** One holder at a time: assigning it is a handover, not an addition. */
   isElected: boolean;
+  /**
+   * A post that only means something inside a branch. It bounds a branch seat
+   * and is refused as a community-wide assignment.
+   */
+  isBranchRole?: boolean;
   /** The registrar and plain membership — structural, cannot be deleted. */
   isProtected: boolean;
   rank: number;
