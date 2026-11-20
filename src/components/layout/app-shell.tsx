@@ -60,7 +60,7 @@ import {
   Webhook,
   LifeBuoy,
 } from 'lucide-react';
-import { cn } from '@/lib/format';
+import { cn, money } from '@/lib/format';
 import { Avatar, Button, MenuItem, Popover } from '@/components/ui';
 import { useSession } from '@/components/providers/session-provider';
 import { useQuery } from '@/hooks/use-query';
@@ -374,6 +374,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   // running. Shown instead of letting the portal look broken.
   const adminAccess = community?.adminAccess ?? null;
 
+  /**
+   * The subscription, as a banner.
+   *
+   * Shown from the first day of the trial rather than when it runs out: a
+   * three-day trial that says nothing until it expires is a surprise, and the
+   * officers who have to find the money are not always the one looking at
+   * the screen. Suppressed once Rendi has stopped the community for its own
+   * reasons, because that banner is the one that matters then.
+   */
+  const billing = entitlements?.billing ?? null;
+
   // Suppressed while halted: "verification pending" is both wrong and
   // misleading for a suspended community, and two banners contradicting each
   // other is worse than either alone.
@@ -509,8 +520,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         {halt && <HaltBanner halt={halt} />}
+        {!halt && billing && <BillingBanner billing={billing} />}
         {!halt && adminAccess && <AdminAccessBanner suspension={adminAccess} />}
-        {unverified && <VerificationBanner />}
+        {unverified && !billing?.held && <VerificationBanner />}
 
         <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:py-8">{children}</main>
 
@@ -1018,4 +1030,87 @@ function NavDisclosure({
       )}
     </li>
   );
+}
+
+/**
+ * Where the community stands on paying for Rendi.
+ *
+ * Three states, three different things to say, and the difference matters:
+ * a trial counting down is information, an unpaid invoice is a request, and
+ * a held community is a wall with a door in it. Each says what to do next,
+ * because a banner that only states a problem leaves the reader to guess.
+ */
+function BillingBanner({ billing }: { billing: NonNullable<EntitlementsSummary['billing']> }) {
+  const amount = billing.amountDue
+    ? money(billing.amountDue, billing.currencyCode)
+    : money(billing.planPrice, billing.currencyCode);
+
+  if (billing.held) {
+    return (
+      <div className="border-b border-red-200 bg-red-50 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+          <CreditCard className="h-4 w-4 shrink-0 text-red-600" aria-hidden />
+          <b className="text-red-900">Paused — {amount} outstanding.</b>
+          <span className="text-red-800">
+            Settle {billing.invoiceNumber ?? 'the invoice'} and everything resumes immediately.
+            Nothing has been lost.
+          </span>
+          <Link
+            href="/billing"
+            className="focus-ring ml-auto rounded-lg bg-red-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-red-700"
+          >
+            Pay now
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (billing.amountDue) {
+    return (
+      <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+          <CreditCard className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+          <b className="text-amber-900">{amount} due for {billing.planName}.</b>
+          <span className="text-amber-800">
+            {billing.graceDaysLeft !== null
+              ? `${billing.graceDaysLeft} day${billing.graceDaysLeft === 1 ? '' : 's'} to pay before the community is paused.`
+              : 'The community is paused if this goes unpaid.'}
+          </span>
+          <Link
+            href="/billing"
+            className="focus-ring ml-auto rounded-lg bg-amber-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-amber-700"
+          >
+            Pay now
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (billing.trialDaysLeft !== null) {
+    return (
+      <div className="border-b border-blue-200 bg-blue-50 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
+          <CreditCard className="h-4 w-4 shrink-0 text-blue-700" aria-hidden />
+          <b className="text-navy-900">
+            {billing.trialDaysLeft === 0
+              ? `Your ${billing.planName} trial ends today.`
+              : `${billing.trialDaysLeft} day${billing.trialDaysLeft === 1 ? '' : 's'} left of your ${billing.planName} trial.`}
+          </b>
+          <span className="text-slate-600">
+            {amount} is invoiced when it ends, and the community pauses if it goes unpaid.
+          </span>
+          <Link
+            href="/billing"
+            className="focus-ring ml-auto rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-[13px] font-semibold text-blue-700 hover:bg-blue-50"
+          >
+            See the plan
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }

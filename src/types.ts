@@ -438,6 +438,29 @@ export interface EntitlementsSummary {
   maxAjoGroups: number | null;
   features: string[];
   allowsApiAccess: boolean;
+  /**
+   * Where the community stands on paying.
+   *
+   * Carried on this probe rather than its own endpoint: the trial countdown
+   * has to show on every screen from day one, and a second request per page
+   * load to say "nothing is due" would be a poor trade.
+   */
+  billing: {
+    status: string;
+    /** Counts down during the trial; null once it is over. */
+    trialDaysLeft: number | null;
+    trialEndsAt: IsoDate | null;
+    graceDaysLeft: number | null;
+    /** What is outstanding, once the trial has ended unpaid. */
+    amountDue: string | null;
+    currencyCode: string;
+    invoiceNumber: string | null;
+    dueAt: IsoDate | null;
+    /** True when everything but Billing is already closed to them. */
+    held: boolean;
+    planName: string;
+    planPrice: string;
+  } | null;
 }
 
 /** A chapter of the community, behind the `branches` plan feature. */

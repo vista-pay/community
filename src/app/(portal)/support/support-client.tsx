@@ -255,11 +255,21 @@ function TicketThread({
   // Defensive on `description`: it is required by the type, but a field the
   // API forgets to send must blank one block, not take the whole page down
   // with it — which is exactly what it did before.
-  const openingMessage = ticket.messages[0]?.authorType === 'CUSTOMER' &&
-    ticket.messages[0].body.trim() === (ticket.description ?? '').trim()
-      ? ticket.messages[0]
-      : null;
-  const conversation = openingMessage ? ticket.messages.slice(1) : ticket.messages;
+  /**
+   * The opening message stays in the conversation.
+   *
+   * It used to be lifted into a box above the thread, which meant the
+   * conversation began mid-exchange and the attachments that came with the
+   * complaint sat apart from it. Left in place, the thread reads from the
+   * beginning — and the facts that were stacked above it now fold away.
+   *
+   * Defensive on `description`: it is required by the type, but an API that
+   * forgets to send it must not take the page down.
+   */
+  const hasOpening = ticket.messages.some(
+    (message) => message.body.trim() === (ticket.description ?? '').trim(),
+  );
+  const conversation = ticket.messages;
 
   async function attach(files: FileList | null) {
     if (!files?.length) return;
@@ -317,8 +327,22 @@ function TicketThread({
         <Badge tone={STATUS_TONE[ticket.status]}>{STATUS_LABEL[ticket.status]}</Badge>
       </header>
 
-      <section className="border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
-        <div className="grid gap-3 sm:grid-cols-3">
+      {/*
+        Folded away. Subject, category, reference and the date are already on
+        the header line above — repeating them in a grid, above a repeat of
+        the opening message, pushed the conversation off the bottom of the
+        screen on a laptop. What is behind the toggle is the detail nobody
+        needs until they need it.
+      */}
+      <details className="group border-b border-slate-200 bg-white open:bg-slate-50/60">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-50 sm:px-5">
+          <span className="transition group-open:rotate-90" aria-hidden>›</span>
+          Request details
+          <Badge tone={ticket.priority === 'NORMAL' ? 'slate' : 'amber'}>
+            {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()} urgency
+          </Badge>
+        </summary>
+        <div className="grid gap-3 px-4 pb-4 sm:grid-cols-3 sm:px-5">
           <Detail label="Subject" value={ticket.subject} />
           <Detail
             label="Category"
@@ -331,23 +355,26 @@ function TicketThread({
             <Detail label="Transaction reference" value={ticket.transactionReference} />
           )}
         </div>
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">What happened</p>
-          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-navy-900">{ticket.description}</p>
-          {openingMessage?.attachments?.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {openingMessage.attachments.map((file) => (
-                <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-700 underline">
-                  {file.fileName}
-                </a>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </section>
+      </details>
 
       <ChatThread
-        messages={conversation.map((message) => ({
+        messages={[
+          // Synthesised only when the complaint was never recorded as a
+          // message — otherwise the thread would open empty and the thing
+          // they actually wrote would be nowhere on the screen.
+          ...(hasOpening
+            ? []
+            : [
+                {
+                  id: `${ticket.reference}-opening`,
+                  text: ticket.description ?? '',
+                  at: ticket.createdAt,
+                  mine: true,
+                  author: 'You',
+                  attachments: undefined,
+                },
+              ]),
+          ...conversation.map((message) => ({
           id: message.id,
           text: message.body,
           at: message.createdAt,
@@ -355,7 +382,8 @@ function TicketThread({
           mine: message.authorType === 'CUSTOMER',
           author: message.authorType === 'CUSTOMER' ? message.authorName : 'Rendi support',
           attachments: message.attachments,
-        }))}
+          })),
+        ]}
         emptyState={
           <p className="text-center text-sm text-slate-500">
             Rendi has not replied yet. You will see the answer here.
